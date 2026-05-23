@@ -122,7 +122,8 @@ mod tests {
 
     #[test]
     fn appends_bounded_to_max() {
-        let dir = std::env::temp_dir().join(format!("propcheck-regtest-bound-{}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("propcheck-regtest-bound-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         let path = dir.join("bound.txt");
         for s in 0..(MAX_SEEDS_PER_FILE as u64 + 10) {

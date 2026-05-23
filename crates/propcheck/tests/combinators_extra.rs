@@ -166,7 +166,10 @@ fn prop_recursive_builds_tree_strategy() {
     }
     // We asked for depth = 3, so the runtime tree must respect the bound.
     // (The leaves contribute 1, then 3 inner layers wrap them.)
-    assert!(max_depth_seen <= 4, "expected depth <= 4, saw {max_depth_seen}");
+    assert!(
+        max_depth_seen <= 4,
+        "expected depth <= 4, saw {max_depth_seen}"
+    );
     // We should also see at least one Array to know recursion fires.
     let mut rng = propcheck::XorShift64::seed_from_u64(31);
     let any_array = (0..200).any(|_| matches!(s.new_value(&mut rng, 8), Json::Array(_)));

@@ -48,17 +48,17 @@ pub mod strategy_runner;
 pub use async_exec::block_on;
 pub use differential::{differential, differential_with};
 
-pub use assert::{PropAssertFailure, PropDiscard, PropSkip};
 #[doc(hidden)]
 pub use assert::{__current_context, __pop_context, __push_context};
+pub use assert::{PropAssertFailure, PropDiscard, PropSkip};
 pub use classify::Classifications;
 pub use propcheck_core::strategy;
 // `Arbitrary` as both the trait (from propcheck-core, type namespace) and the
 // derive macro (from propcheck-derive, macro namespace).
 pub use propcheck_derive::{propcheck, Arbitrary};
-pub use strategy_runner::{forall_strategy, forall_strategy_with, run_strategy, run_strategy_with};
 #[doc(hidden)]
 pub use strategy_runner::__ComposedStrategy;
+pub use strategy_runner::{forall_strategy, forall_strategy_with, run_strategy, run_strategy_with};
 
 use panic_hook::SilentPanicHook;
 
@@ -387,7 +387,10 @@ where
     drop(_guard);
 
     // Persist new failing seed for future runs.
-    if let Outcome::Failed { seed: failed_seed, .. } = &outcome {
+    if let Outcome::Failed {
+        seed: failed_seed, ..
+    } = &outcome
+    {
         if let Some(path) = &regression_path {
             let _ = regression::append_seed(path, *failed_seed);
         }
@@ -545,7 +548,7 @@ where
             CaseOutcome::Fail(message) => {
                 classifications.merge_case(labels);
                 let shrunk =
-                shrink_failure_with_mode(val.clone(), prop, cfg.max_shrinks, cfg.shrink_mode);
+                    shrink_failure_with_mode(val.clone(), prop, cfg.max_shrinks, cfg.shrink_mode);
                 return Outcome::Failed {
                     original: val,
                     shrunk,
@@ -794,7 +797,9 @@ mod tests {
             n > 0
         });
         match outcome {
-            Outcome::Passed { cases, discarded, .. } => {
+            Outcome::Passed {
+                cases, discarded, ..
+            } => {
                 assert_eq!(cases, 50);
                 assert!(discarded > 0, "expected some discards from negative inputs");
             }

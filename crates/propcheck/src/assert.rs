@@ -93,8 +93,7 @@ pub fn __current_context() -> String {
 macro_rules! prop_with_context {
     ($ctx:expr, $body:block) => {{
         $crate::__push_context(::std::format!("{}", $ctx));
-        let __result =
-            ::std::panic::catch_unwind(::std::panic::AssertUnwindSafe(|| $body));
+        let __result = ::std::panic::catch_unwind(::std::panic::AssertUnwindSafe(|| $body));
         $crate::__pop_context();
         match __result {
             ::std::result::Result::Ok(v) => v,

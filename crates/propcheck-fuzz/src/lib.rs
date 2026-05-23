@@ -181,7 +181,13 @@ where
         let mut input = base;
         let n_mutations = rng.gen_range_u64(1, 5);
         for _ in 0..n_mutations {
-            mutate(&mut rng, &mut input, &corpus, &cfg.dictionary, cfg.max_input_len);
+            mutate(
+                &mut rng,
+                &mut input,
+                &corpus,
+                &cfg.dictionary,
+                cfg.max_input_len,
+            );
         }
 
         match invoke(&mut target, &input) {
@@ -524,7 +530,10 @@ mod tests {
                 panic!("found magic");
             }
         });
-        assert!(report.failure().is_some(), "dictionary mutation should find MAGIC");
+        assert!(
+            report.failure().is_some(),
+            "dictionary mutation should find MAGIC"
+        );
     }
 
     #[test]

@@ -89,7 +89,11 @@ impl XorShift64 {
     /// `0` would degenerate the algorithm to always producing `0`, so it is
     /// silently replaced with a fixed non-zero constant.
     pub fn seed_from_u64(seed: u64) -> Self {
-        let state = if seed == 0 { 0x9E37_79B9_7F4A_7C15 } else { seed };
+        let state = if seed == 0 {
+            0x9E37_79B9_7F4A_7C15
+        } else {
+            seed
+        };
         Self { state }
     }
 

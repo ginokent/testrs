@@ -90,7 +90,10 @@ fn enum_shrinks_within_variant_when_collapse_doesnt_help() {
         !matches!(v, WithFields::Pair(_, _))
     });
     assert!(outcome.is_failed());
-    assert_eq!(*outcome.shrunk().unwrap(), WithFields::Pair(0, String::new()));
+    assert_eq!(
+        *outcome.shrunk().unwrap(),
+        WithFields::Pair(0, String::new())
+    );
 }
 
 #[test]

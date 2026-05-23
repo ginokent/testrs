@@ -34,13 +34,16 @@ enum Json {
 fn main() {
     // 1. Field attributes keep the generator inside the domain — no
     //    discards needed, classifications reflect the real distribution.
-    run("User invariants hold under derived generator", |u: &User| {
-        classify!(u.favorite_numbers.is_empty(), "no-favorites");
-        classify!(u.favorite_numbers.len() >= 3, "many-favorites");
-        prop_assert!(!u.name.is_empty());
-        prop_assert!((18..100).contains(&u.age));
-        true
-    });
+    run(
+        "User invariants hold under derived generator",
+        |u: &User| {
+            classify!(u.favorite_numbers.is_empty(), "no-favorites");
+            classify!(u.favorite_numbers.len() >= 3, "many-favorites");
+            prop_assert!(!u.name.is_empty());
+            prop_assert!((18..100).contains(&u.age));
+            true
+        },
+    );
 
     // 2. prop_assert_matches! makes Result/Option/enum assertions readable.
     run("name parses as identifier-like", |u: &User| {
