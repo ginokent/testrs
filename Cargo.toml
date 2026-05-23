@@ -4,6 +4,7 @@ members = [
     "crates/propcheck-core",
     "crates/propcheck",
     "crates/propcheck-fuzz",
+    "crates/propcheck-derive",
 ]
 
 [workspace.package]
@@ -11,7 +12,7 @@ version = "0.1.0"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/ginokent/test-rs"
-rust-version = "1.70"
+rust-version = "1.82"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

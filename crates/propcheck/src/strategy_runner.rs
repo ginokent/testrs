@@ -1,0 +1,240 @@
+//! Runner variants driven by a [`Strategy`] instead of the type's
+//! [`Arbitrary`] impl.
+//!
+//! When a test wants a constrained generator (e.g. `int_range(0..100)`
+//! rather than the full `i32` distribution), pass it to
+//! [`forall_strategy`] or [`run_strategy`].
+
+use std::fmt::Debug;
+
+use propcheck_core::strategy::Strategy;
+use propcheck_core::XorShift64;
+
+use crate::panic_hook::SilentPanicHook;
+use crate::{run_prop, CaseOutcome, Config, Outcome};
+
+/// Runs `prop` against values produced by `strategy`.
+pub fn forall_strategy<S, F>(strategy: S, prop: F) -> Outcome<S::Value>
+where
+    S: Strategy,
+    S::Value: Debug,
+    F: FnMut(&S::Value) -> bool,
+{
+    forall_strategy_with(strategy, Config::default(), prop)
+}
+
+/// Runs `prop` against values produced by `strategy` with a custom config.
+pub fn forall_strategy_with<S, F>(strategy: S, cfg: Config, mut prop: F) -> Outcome<S::Value>
+where
+    S: Strategy,
+    S::Value: Debug,
+    F: FnMut(&S::Value) -> bool,
+{
+    let _guard = if cfg.silence_panic_hook {
+        Some(SilentPanicHook::install())
+    } else {
+        None
+    };
+    let mut rng = XorShift64::seed_from_u64(cfg.seed);
+    let target_cases = cfg.cases.max(1);
+    let mut passed = 0usize;
+    let mut discarded = 0usize;
+
+    while passed < target_cases {
+        if discarded > cfg.max_discards {
+            return Outcome::Aborted {
+                reason: format!("too many discards: {discarded} (limit {})", cfg.max_discards),
+                cases: passed,
+                discarded,
+                seed: cfg.seed,
+            };
+        }
+        let size = 1 + (passed * cfg.max_size / target_cases).min(cfg.max_size);
+        let val = strategy.new_value(&mut rng, size);
+        match run_prop(&mut prop, &val) {
+            CaseOutcome::Pass => passed += 1,
+            CaseOutcome::Discard => discarded += 1,
+            CaseOutcome::Fail(message) => {
+                let shrunk = shrink_with_strategy(&strategy, val.clone(), &mut prop, cfg.max_shrinks);
+                return Outcome::Failed {
+                    original: val,
+                    shrunk,
+                    message,
+                    seed: cfg.seed,
+                    attempt: passed + 1,
+                    discarded,
+                };
+            }
+        }
+    }
+    Outcome::Passed {
+        cases: passed,
+        discarded,
+    }
+}
+
+/// Like [`forall_strategy`] but panics on failure, suitable for `#[test]`.
+pub fn run_strategy<S, F>(name: &str, strategy: S, prop: F)
+where
+    S: Strategy,
+    S::Value: Debug,
+    F: FnMut(&S::Value) -> bool,
+{
+    run_strategy_with(name, strategy, Config::default(), prop)
+}
+
+/// Like [`forall_strategy_with`] but panics on failure.
+pub fn run_strategy_with<S, F>(name: &str, strategy: S, cfg: Config, prop: F)
+where
+    S: Strategy,
+    S::Value: Debug,
+    F: FnMut(&S::Value) -> bool,
+{
+    let seed = cfg.seed;
+    match forall_strategy_with(strategy, cfg, prop) {
+        Outcome::Passed { cases, discarded } => {
+            if discarded == 0 {
+                eprintln!("[propcheck] {name}: ok ({cases} cases, seed={seed})");
+            } else {
+                eprintln!(
+                    "[propcheck] {name}: ok ({cases} cases, {discarded} discarded, seed={seed})"
+                );
+            }
+        }
+        Outcome::Failed {
+            original,
+            shrunk,
+            message,
+            seed,
+            attempt,
+            discarded,
+        } => panic!(
+            "[propcheck] {name} FAILED at case #{attempt} (PROPCHECK_SEED={seed}, {discarded} discarded)\n  \
+             reason:   {message}\n  \
+             original: {original:?}\n  \
+             shrunk:   {shrunk:?}"
+        ),
+        Outcome::Aborted {
+            reason,
+            cases,
+            discarded,
+            seed,
+        } => panic!(
+            "[propcheck] {name} ABORTED (seed={seed})\n  reason: {reason}\n  cases ran: {cases}, discarded: {discarded}"
+        ),
+    }
+}
+
+fn shrink_with_strategy<S, F>(strategy: &S, initial: S::Value, prop: &mut F, max: usize) -> S::Value
+where
+    S: Strategy,
+    F: FnMut(&S::Value) -> bool,
+{
+    let mut current = initial;
+    let mut attempts = 0;
+    'outer: loop {
+        let candidates = strategy.shrink_value(&current);
+        if candidates.is_empty() {
+            return current;
+        }
+        for c in candidates {
+            if attempts >= max {
+                return current;
+            }
+            attempts += 1;
+            if matches!(run_prop(prop, &c), CaseOutcome::Fail(_)) {
+                current = c;
+                continue 'outer;
+            }
+        }
+        return current;
+    }
+}
+
+/// Builds a [`one_of`](propcheck_core::strategy::one_of) strategy from a
+/// variadic list of sub-strategies, automatically boxing each so they may
+/// have different concrete types.
+///
+/// Two forms are supported:
+///
+/// - Uniform: `prop_oneof![strat_a, strat_b, strat_c]`
+/// - Weighted: `prop_oneof![1 => strat_a, 4 => strat_b]`
+#[macro_export]
+macro_rules! prop_oneof {
+    ($($w:literal => $strat:expr),+ $(,)?) => {
+        $crate::strategy::weighted_one_of(vec![
+            $( ($w as u32, $crate::strategy::StrategyExt::boxed($strat)), )+
+        ])
+    };
+    ($($strat:expr),+ $(,)?) => {
+        $crate::strategy::one_of(vec![
+            $( $crate::strategy::StrategyExt::boxed($strat), )+
+        ])
+    };
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use propcheck_core::strategy::{int_range, just};
+
+    fn cfg(seed: u64) -> Config {
+        Config {
+            cases: 100,
+            seed,
+            max_shrinks: 256,
+            max_size: 50,
+            max_discards: 1000,
+            silence_panic_hook: false,
+        }
+    }
+
+    #[test]
+    fn forall_strategy_runs_with_constrained_generator() {
+        let s = int_range(0i32..100);
+        match forall_strategy_with(s, cfg(1), |&n: &i32| (0..100).contains(&n)) {
+            Outcome::Passed { cases, .. } => assert_eq!(cases, 100),
+            other => panic!("expected pass, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn forall_strategy_shrinks_via_strategy() {
+        let s = int_range(0i32..1000);
+        let outcome = forall_strategy_with(s, cfg(2), |&n: &i32| n < 500);
+        match outcome {
+            Outcome::Failed { shrunk, .. } => assert_eq!(shrunk, 500),
+            other => panic!("expected failure, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn prop_oneof_uniform_compiles_and_runs() {
+        let s = crate::prop_oneof![just(1i32), just(2), just(3)];
+        let mut seen = std::collections::HashSet::new();
+        match forall_strategy_with(s, cfg(3), |&n: &i32| {
+            seen.insert(n);
+            (1..=3).contains(&n)
+        }) {
+            Outcome::Passed { .. } => {}
+            other => panic!("expected pass, got {other:?}"),
+        }
+        assert!(seen.len() > 1, "expected variety");
+    }
+
+    #[test]
+    fn prop_oneof_weighted_compiles_and_runs() {
+        let s = crate::prop_oneof![99 => just(0i32), 1 => just(1)];
+        let mut zeros = 0;
+        let mut ones = 0;
+        let _ = forall_strategy_with(s, cfg(4), |&n: &i32| {
+            if n == 0 {
+                zeros += 1
+            } else {
+                ones += 1
+            }
+            true
+        });
+        assert!(zeros > ones * 5, "expected heavy bias toward 0");
+    }
+}

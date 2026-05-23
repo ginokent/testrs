@@ -383,6 +383,23 @@ impl<T: Arbitrary, E: Arbitrary> Arbitrary for Result<T, E> {
 
 // --- tuples -------------------------------------------------------------
 
+impl Arbitrary for () {
+    fn arbitrary<R: Rng + ?Sized>(_rng: &mut R, _size: usize) -> Self {}
+    fn shrink(&self) -> Box<dyn Iterator<Item = Self> + '_> {
+        Box::new(std::iter::empty())
+    }
+}
+
+impl<A: Arbitrary> Arbitrary for (A,) {
+    fn arbitrary<R: Rng + ?Sized>(rng: &mut R, size: usize) -> Self {
+        (A::arbitrary(rng, size),)
+    }
+    fn shrink(&self) -> Box<dyn Iterator<Item = Self> + '_> {
+        let v: Vec<A> = self.0.shrink().collect();
+        Box::new(v.into_iter().map(|a| (a,)))
+    }
+}
+
 impl<A: Arbitrary, B: Arbitrary> Arbitrary for (A, B) {
     fn arbitrary<R: Rng + ?Sized>(rng: &mut R, size: usize) -> Self {
         (A::arbitrary(rng, size), B::arbitrary(rng, size))

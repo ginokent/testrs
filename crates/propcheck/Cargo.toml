@@ -9,6 +9,7 @@ description = "Property-based testing runner with automatic shrinking. No extern
 
 [dependencies]
 propcheck-core = { path = "../propcheck-core", version = "0.1.0" }
+propcheck-derive = { path = "../propcheck-derive", version = "0.1.0" }
 
 [lints]
 workspace = true

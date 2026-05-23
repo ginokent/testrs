@@ -25,7 +25,10 @@ use std::any::Any;
 use std::env;
 use std::panic::{self, AssertUnwindSafe};
 
-pub use propcheck_core::{Rng, XorShift64};
+pub use propcheck_core::{Arbitrary, Rng, XorShift64};
+
+mod typed;
+pub use typed::{fuzz_typed, TypedFuzzConfig};
 
 /// Tunables for a fuzzing run.
 #[derive(Debug, Clone)]

@@ -1,0 +1,224 @@
+# propcheck
+
+Property-based testing and fuzzing for Rust, **with zero external
+dependencies** — only the standard library and the compiler-provided
+`proc_macro` crate.
+
+The workspace is split into four crates:
+
+| Crate              | Purpose                                                              |
+|--------------------|----------------------------------------------------------------------|
+| `propcheck-core`   | `Rng`, `XorShift64`, `Arbitrary` trait, `strategy::*` combinators    |
+| `propcheck-derive` | `#[derive(Arbitrary)]` and `#[propcheck]` proc-macros                |
+| `propcheck`        | Test runner, assertion macros, regression shrinking                  |
+| `propcheck-fuzz`   | In-process mutation fuzzer (`fuzz` + `fuzz_typed`)                   |
+
+Most users only need `propcheck`. It re-exports everything from
+`propcheck-core` and `propcheck-derive`.
+
+```toml
+[dev-dependencies]
+propcheck = { path = "crates/propcheck" }
+propcheck-fuzz = { path = "crates/propcheck-fuzz" }   # optional, only for fuzzing
+```
+
+## Quick start
+
+```rust
+use propcheck::{propcheck, prop_assert_eq};
+
+#[propcheck]
+fn addition_is_commutative(a: i32, b: i32) {
+    prop_assert_eq!(a.wrapping_add(b), b.wrapping_add(a));
+}
+```
+
+`cargo test` runs the property 100 times by default. On failure, the runner
+shrinks the inputs to a minimal counterexample, prints both sides of the
+assertion, and emits a `PROPCHECK_SEED` so the run can be reproduced.
+
+## Patterns
+
+### 1. Round-trip a serializer
+
+```rust
+use propcheck::{propcheck, prop_assert_eq, Arbitrary};
+
+#[derive(Arbitrary, Debug, Clone, PartialEq)]
+struct Config {
+    name: String,
+    port: u16,
+    flags: Vec<bool>,
+}
+
+fn to_bytes(c: &Config) -> Vec<u8> { /* ... */ }
+fn from_bytes(b: &[u8]) -> Result<Config, Error> { /* ... */ }
+
+#[propcheck]
+fn config_round_trips(c: Config) {
+    let bytes = to_bytes(&c);
+    let back = from_bytes(&bytes).expect("our own serializer should parse");
+    prop_assert_eq!(c, back);
+}
+```
+
+### 2. Test a sort against its specification
+
+```rust
+use propcheck::{propcheck, prop_assert};
+
+#[propcheck]
+fn sort_is_sorted(mut v: Vec<i32>) {
+    let original_len = v.len();
+    v.sort();
+    prop_assert!(v.len() == original_len);
+    prop_assert!(v.windows(2).all(|w| w[0] <= w[1]));
+}
+
+#[propcheck]
+fn sort_is_idempotent(v: Vec<i32>) {
+    let mut once = v.clone();
+    once.sort();
+    let mut twice = once.clone();
+    twice.sort();
+    propcheck::prop_assert_eq!(once, twice);
+}
+```
+
+### 3. Properties with preconditions
+
+```rust
+use propcheck::{propcheck, prop_assume, prop_assert};
+
+#[propcheck]
+fn binary_search_finds_existing(v: Vec<u32>, idx: usize) {
+    let mut sorted = v.clone();
+    sorted.sort();
+    prop_assume!(!sorted.is_empty());
+    let i = idx % sorted.len();
+    let target = sorted[i];
+    prop_assert!(sorted.binary_search(&target).is_ok());
+}
+```
+
+`prop_assume!` discards the case and generates a fresh one. Excessive
+discards (more than `Config::max_discards`, default 10× the case count) abort
+the run with a clear message — so a noisy `prop_assume!` is hard to miss.
+
+### 4. Constrain generated values with a `Strategy`
+
+```rust
+use propcheck::{run_strategy, prop_assert};
+use propcheck::strategy::{int_range, vec_of, StrategyExt};
+
+#[test]
+fn percentage_stays_in_range() {
+    let strategy = vec_of(int_range(0i32..101), 1..50);
+    run_strategy("percentages add to <= 100*n", strategy, |v: &Vec<i32>| {
+        let n = v.len() as i32;
+        prop_assert!(v.iter().sum::<i32>() <= 100 * n);
+        true
+    });
+}
+```
+
+Available combinators in `propcheck::strategy`:
+
+- `any::<T>()` — defer to `T::Arbitrary`
+- `just(v)` — constant
+- `int_range(lo..hi)` — integer in `[lo, hi)`, shrinks toward 0 or `lo`
+- `vec_of(elem, len_range)` — variable-length `Vec<T>` respecting `min_len`
+- `one_of(vec![...])` — uniform choice; `weighted_one_of` for biased
+- `tuple(a, b)` — product
+- `.map(f)` / `.filter(pred)` / `.boxed()` on any strategy
+- `prop_oneof![a, b]` or `prop_oneof![1 => a, 4 => b]` — convenience macro
+
+### 5. Fuzz a byte-oriented target
+
+```rust
+use propcheck_fuzz::{fuzz, FuzzConfig};
+
+#[test]
+fn parser_does_not_panic() {
+    let report = fuzz(FuzzConfig::default(), |bytes: &[u8]| {
+        let _ = my_parser::parse(bytes);
+    });
+    assert!(report.failure.is_none(), "found crash: {:?}", report.failure);
+}
+```
+
+### 6. Fuzz a typed API
+
+```rust
+use propcheck_fuzz::{fuzz_typed, TypedFuzzConfig};
+
+#[test]
+fn json_query_never_panics() {
+    let report = fuzz_typed::<String, _>(TypedFuzzConfig::default(), |s: &String| {
+        let _ = json::query(s);
+    });
+    assert!(report.failure.is_none());
+}
+```
+
+Any type with an `Arbitrary` impl can drive `fuzz_typed`. The mutator
+operates on the byte seed, so it explores a wide variety of inputs without
+needing a hand-written `&[u8] → T` decoder.
+
+## Reproducing a failure
+
+Failures print a seed:
+
+```
+[propcheck] my_test FAILED at case #4 (PROPCHECK_SEED=12345, 0 discarded)
+  reason:   prop_assert_eq! failed at src/lib.rs:42
+            left:  42
+            right: 43
+  original: ...
+  shrunk:   ...
+```
+
+Set `PROPCHECK_SEED=12345 cargo test my_test` to reproduce deterministically.
+The fuzz crate uses `PROPCHECK_FUZZ_SEED` in the same way.
+
+## Tuning a run
+
+`run` and `forall` use `Config::default()`. To customize, use `run_with`:
+
+```rust
+use propcheck::{run_with, Config};
+
+run_with(
+    "stress test",
+    Config {
+        cases: 10_000,
+        max_shrinks: 4_096,
+        max_size: 500,
+        ..Config::default()
+    },
+    |v: &Vec<i32>| /* property */,
+);
+```
+
+## Limitations
+
+- `#[derive(Arbitrary)]` supports structs (named, tuple, unit) and generic
+  structs whose type parameters all need `Arbitrary`. Enums and structs with
+  a custom `where` clause must implement `Arbitrary` by hand.
+- The fuzzer has no coverage feedback. It's a "smoke fuzzer" for catching
+  panics on random and mutated inputs, not a replacement for libFuzzer or
+  cargo-fuzz when those are available.
+- The runner installs a process-global panic hook (refcounted for safety).
+  Property tests in different threads share that hook installation; mixing
+  with code that takes/sets the panic hook concurrently can race.
+- No async-fn support.
+
+## Running the test suite
+
+```
+cargo test --workspace
+cargo clippy --workspace --all-targets -- -D warnings
+cargo run --example sort_props   -p propcheck
+cargo run --example derive_demo  -p propcheck   # demonstrates a failing property
+cargo run --release --example find_crash -p propcheck-fuzz
+```
