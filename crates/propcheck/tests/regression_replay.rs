@@ -48,7 +48,10 @@ fn regression_seed_is_persisted_and_replayed() {
 
     // After the failure, the regression file should exist and contain
     // at least one seed line.
-    assert!(reg_file.exists(), "regression file was not created at {reg_file:?}");
+    assert!(
+        reg_file.exists(),
+        "regression file was not created at {reg_file:?}"
+    );
     let content = fs::read_to_string(&reg_file).expect("read regression file");
     let seeds: Vec<u64> = content
         .lines()
@@ -63,7 +66,10 @@ fn regression_seed_is_persisted_and_replayed() {
     let captured2 = std::panic::catch_unwind(move || {
         propcheck::run::<u32, _, _>(&test_name_for_replay, |&n: &u32| n < 50);
     });
-    assert!(captured2.is_err(), "regression should reproduce the failure");
+    assert!(
+        captured2.is_err(),
+        "regression should reproduce the failure"
+    );
 
     // Cleanup.
     let _ = fs::remove_file(&reg_file);
@@ -98,7 +104,10 @@ fn run_with_regression_replay_disabled_does_not_persist() {
         );
     });
 
-    assert!(!reg_file.exists(), "file should not be created when regression_replay = false");
+    assert!(
+        !reg_file.exists(),
+        "file should not be created when regression_replay = false"
+    );
 
     // Silence unused-import warning for Command when this file is built
     // without spawning sub-processes.

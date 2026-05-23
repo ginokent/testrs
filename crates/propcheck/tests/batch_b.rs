@@ -86,7 +86,10 @@ fn too_many_skips_aborts_with_distinct_message() {
         Outcome::Aborted { reason, .. } => reason.clone(),
         _ => unreachable!(),
     };
-    assert!(msg.contains("skip"), "expected reason to mention skips, got: {msg}");
+    assert!(
+        msg.contains("skip"),
+        "expected reason to mention skips, got: {msg}"
+    );
 }
 
 // --- prop_with_context! -----------------------------------------------
@@ -101,7 +104,10 @@ fn prop_with_context_includes_context_in_failure_message() {
     });
     assert!(outcome.is_failed());
     let msg = outcome.failure_message().unwrap();
-    assert!(msg.contains("context"), "expected context: in message, got {msg}");
+    assert!(
+        msg.contains("context"),
+        "expected context: in message, got {msg}"
+    );
     assert!(msg.contains("input n ="));
 }
 
@@ -163,25 +169,20 @@ fn string_strategy_shrinks_to_canonical_chars() {
     // Property: "no generated string contains '5'" — fails almost
     // immediately because the digit set includes 5. Shrunk value should
     // be the minimal string containing 5: "5".
-    let outcome = forall_strategy_with(
-        str::ascii_digits(1..30),
-        no_replay_cfg(10),
-        |s: &String| !s.contains('5'),
-    );
+    let outcome =
+        forall_strategy_with(str::ascii_digits(1..30), no_replay_cfg(10), |s: &String| {
+            !s.contains('5')
+        });
     assert!(outcome.is_failed());
     assert_eq!(outcome.shrunk().unwrap(), "5");
 }
 
 #[test]
 fn hex_string_strategy_only_emits_hex_chars() {
-    let outcome = forall_strategy_with(
-        str::hex_string(0..10),
-        no_replay_cfg(11),
-        |s: &String| {
-            prop_assert!(s.chars().all(|c| c.is_ascii_hexdigit()));
-            true
-        },
-    );
+    let outcome = forall_strategy_with(str::hex_string(0..10), no_replay_cfg(11), |s: &String| {
+        prop_assert!(s.chars().all(|c| c.is_ascii_hexdigit()));
+        true
+    });
     assert!(outcome.is_passed());
 }
 
@@ -232,14 +233,17 @@ fn prop_compose_can_drive_run_strategy() {
 
 #[test]
 fn five_tuple_arbitrary_works() {
-    let outcome = forall_with(no_replay_cfg(14), |&(a, b, c, d, e): &(u8, u8, u8, u8, u8)| {
-        prop_assert_eq!(a, a);
-        prop_assert_eq!(b, b);
-        prop_assert_eq!(c, c);
-        prop_assert_eq!(d, d);
-        prop_assert_eq!(e, e);
-        true
-    });
+    let outcome = forall_with(
+        no_replay_cfg(14),
+        |&(a, b, c, d, e): &(u8, u8, u8, u8, u8)| {
+            prop_assert_eq!(a, a);
+            prop_assert_eq!(b, b);
+            prop_assert_eq!(c, c);
+            prop_assert_eq!(d, d);
+            prop_assert_eq!(e, e);
+            true
+        },
+    );
     assert!(outcome.is_passed());
 }
 
