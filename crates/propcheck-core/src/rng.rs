@@ -62,7 +62,14 @@ pub trait Rng {
 
     /// Returns a uniformly random reference to an element of `slice`, or
     /// `None` if the slice is empty.
-    fn choose<'a, T>(&mut self, slice: &'a [T]) -> Option<&'a T> {
+    ///
+    /// Bounded by `Self: Sized` so that the rest of the trait remains
+    /// object-safe — internal dispatch through `&mut dyn Rng` requires no
+    /// generic methods on the dispatched trait.
+    fn choose<'a, T>(&mut self, slice: &'a [T]) -> Option<&'a T>
+    where
+        Self: Sized,
+    {
         if slice.is_empty() {
             None
         } else {

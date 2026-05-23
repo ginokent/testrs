@@ -162,15 +162,24 @@ macro_rules! impl_arbitrary_float {
     ($t:ty, $u:ty, $bits:expr) => {
         impl Arbitrary for $t {
             fn arbitrary<R: Rng + ?Sized>(rng: &mut R, size: usize) -> Self {
-                // 10% chance of an "interesting" boundary value, otherwise a
-                // random float in roughly [-size, size].
-                let pick = rng.gen_range_u64(0, 10);
-                if pick == 0 {
-                    let interesting: [$t; 6] = [
-                        0.0, -0.0, 1.0, -1.0,
-                        <$t>::INFINITY, <$t>::NEG_INFINITY,
+                // 15% chance of an "interesting" boundary value covering
+                // zeros, units, subnormals, max/min, NaN, and infinities.
+                let pick = rng.gen_range_u64(0, 20);
+                if pick < 3 {
+                    let interesting: [$t; 10] = [
+                        0.0,
+                        -0.0,
+                        1.0,
+                        -1.0,
+                        <$t>::INFINITY,
+                        <$t>::NEG_INFINITY,
+                        <$t>::NAN,
+                        <$t>::MIN_POSITIVE,
+                        <$t>::MIN,
+                        <$t>::MAX,
                     ];
-                    return *rng.choose(&interesting).unwrap();
+                    let idx = rng.gen_range_usize(0, interesting.len());
+                    return interesting[idx];
                 }
                 let bits = rng.next_u64() as $u;
                 let f = <$t>::from_bits(bits);

@@ -248,7 +248,8 @@ fn mutate<R: Rng + ?Sized>(
             2 if !input.is_empty() => {
                 let i = rng.gen_range_usize(0, input.len());
                 const INTERESTING: [u8; 7] = [0x00, 0x01, 0x10, 0x7f, 0x80, 0xfe, 0xff];
-                input[i] = *rng.choose(&INTERESTING).unwrap();
+                let idx = rng.gen_range_usize(0, INTERESTING.len());
+                input[i] = INTERESTING[idx];
                 true
             }
             3 if input.len() < max_len => {
@@ -262,7 +263,8 @@ fn mutate<R: Rng + ?Sized>(
                 true
             }
             5 if !corpus.is_empty() && !input.is_empty() => {
-                let other = rng.choose(corpus).cloned().unwrap_or_default();
+                let idx = rng.gen_range_usize(0, corpus.len());
+                let other = corpus[idx].clone();
                 if other.is_empty() {
                     false
                 } else {
