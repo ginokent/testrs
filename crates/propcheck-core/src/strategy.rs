@@ -73,6 +73,24 @@ pub trait StrategyExt: Strategy + Sized {
         }
     }
 
+    /// Builds a new strategy whose value depends on a previously generated
+    /// value. Useful for "first pick a length, then generate a Vec of that
+    /// length" and similar dependent-generation patterns.
+    ///
+    /// Shrinking is not preserved across `flat_map` — see the docs on
+    /// [`FlatMap`].
+    fn flat_map<F, S2>(self, f: F) -> FlatMap<Self, F, S2>
+    where
+        F: Fn(Self::Value) -> S2 + 'static,
+        S2: Strategy,
+    {
+        FlatMap {
+            inner: self,
+            f,
+            _phantom: PhantomData,
+        }
+    }
+
     /// Erases the concrete type for use in heterogeneous collections like
     /// [`one_of`].
     fn boxed(self) -> BoxedStrategy<Self::Value>
@@ -195,6 +213,150 @@ impl_int_range!(u16, u64, gen_range_u64);
 impl_int_range!(u32, u64, gen_range_u64);
 impl_int_range!(u64, u64, gen_range_u64);
 impl_int_range!(usize, u64, gen_range_u64);
+
+// --- char_range: a `char` in [lo, hi) -----------------------------------
+
+/// A strategy that yields a `char` in `[lo, hi)`, skipping surrogate
+/// codepoints. Shrinks toward `lo`.
+pub struct CharRange {
+    lo: char,
+    hi: char,
+}
+
+/// Builds a [`CharRange`] strategy from a `Range<char>`.
+pub fn char_range(r: Range<char>) -> CharRange {
+    assert!(r.start <= r.end, "char_range: lo must be <= hi");
+    CharRange {
+        lo: r.start,
+        hi: r.end,
+    }
+}
+
+impl Strategy for CharRange {
+    type Value = char;
+    fn new_value<R: Rng + ?Sized>(&self, rng: &mut R, _size: usize) -> char {
+        let lo = self.lo as u32;
+        let hi = self.hi as u32;
+        if hi <= lo {
+            return self.lo;
+        }
+        // Surrogate codepoints (0xD800..=0xDFFF) are invalid as char; retry
+        // up to ~32 times before falling back to lo to avoid spinning.
+        for _ in 0..32 {
+            let code = rng.gen_range_u64(lo as u64, hi as u64) as u32;
+            if let Some(c) = char::from_u32(code) {
+                return c;
+            }
+        }
+        self.lo
+    }
+    fn shrink_value(&self, value: &char) -> Vec<char> {
+        if *value == self.lo {
+            return Vec::new();
+        }
+        let mut out: Vec<char> = vec![self.lo];
+        let v = *value as u32;
+        let lo = self.lo as u32;
+        let mut delta = v.saturating_sub(lo);
+        loop {
+            delta /= 2;
+            if delta == 0 {
+                break;
+            }
+            let cand = v - delta;
+            if let Some(c) = char::from_u32(cand) {
+                if c != *value && c != self.lo && !out.contains(&c) {
+                    out.push(c);
+                }
+            }
+        }
+        out
+    }
+}
+
+// --- bytes: variable-length byte slice -------------------------------
+
+/// A strategy that yields a `Vec<u8>` of length in `len_range`. Sugar
+/// over `vec_of(any::<u8>(), len_range)`.
+pub fn bytes(len_range: Range<usize>) -> VecOf<AnyOf<u8>> {
+    vec_of(any::<u8>(), len_range)
+}
+
+// --- float ranges ----------------------------------------------------
+
+/// A strategy that yields a float uniformly in `[lo, hi)`. Shrinks
+/// toward `0.0` if the range contains it, otherwise toward `lo`.
+pub struct FloatRange<T> {
+    lo: T,
+    hi: T,
+}
+
+/// Builds an [`f32`] range strategy.
+pub fn f32_range(r: Range<f32>) -> FloatRange<f32> {
+    assert!(r.start <= r.end, "f32_range: lo must be <= hi");
+    FloatRange {
+        lo: r.start,
+        hi: r.end,
+    }
+}
+
+/// Builds an [`f64`] range strategy.
+pub fn f64_range(r: Range<f64>) -> FloatRange<f64> {
+    assert!(r.start <= r.end, "f64_range: lo must be <= hi");
+    FloatRange {
+        lo: r.start,
+        hi: r.end,
+    }
+}
+
+macro_rules! impl_float_range {
+    ($t:ty) => {
+        impl Strategy for FloatRange<$t> {
+            type Value = $t;
+            fn new_value<R: Rng + ?Sized>(&self, rng: &mut R, _size: usize) -> $t {
+                if self.lo >= self.hi {
+                    return self.lo;
+                }
+                // Uniform in [0, 1) via u64 → float conversion.
+                let bits = rng.next_u64();
+                let frac = (bits as $t) / (u64::MAX as $t);
+                self.lo + frac * (self.hi - self.lo)
+            }
+            fn shrink_value(&self, value: &$t) -> Vec<$t> {
+                let target: $t = if self.lo <= 0.0 && 0.0 < self.hi {
+                    0.0
+                } else {
+                    self.lo
+                };
+                if *value == target {
+                    return Vec::new();
+                }
+                let mut out: Vec<$t> = vec![target];
+                let mut delta = *value - target;
+                loop {
+                    delta /= (2.0 as $t);
+                    // Stop when delta is tiny enough that the shrink would
+                    // be indistinguishable from the input.
+                    if delta.abs() < <$t>::EPSILON * value.abs().max(1.0) {
+                        break;
+                    }
+                    let cand = *value - delta;
+                    if cand >= self.lo
+                        && cand < self.hi
+                        && cand != *value
+                        && !out.iter().any(|x: &$t| (*x - cand).abs() < <$t>::EPSILON)
+                    {
+                        out.push(cand);
+                    }
+                }
+                out
+            }
+        }
+    };
+}
+
+impl_float_range!(f32);
+impl_float_range!(f64);
 
 // --- one_of: uniform choice from a list of strategies ------------------
 
@@ -381,6 +543,37 @@ where
     }
 }
 
+// --- FlatMap combinator -----------------------------------------------
+
+/// See [`StrategyExt::flat_map`].
+///
+/// `FlatMap` cannot shrink because the value held has lost its connection
+/// to the "outer" value that was fed into `f`. If you need shrinking on
+/// dependent generation, define a custom [`Strategy`] manually that
+/// preserves whatever state shrinking needs.
+pub struct FlatMap<S, F, S2> {
+    inner: S,
+    f: F,
+    _phantom: PhantomData<fn() -> S2>,
+}
+
+impl<S, F, S2> Strategy for FlatMap<S, F, S2>
+where
+    S: Strategy,
+    F: Fn(S::Value) -> S2 + 'static,
+    S2: Strategy,
+{
+    type Value = S2::Value;
+    fn new_value<R: Rng + ?Sized>(&self, rng: &mut R, size: usize) -> S2::Value {
+        let outer = self.inner.new_value(rng, size);
+        let inner_strategy = (self.f)(outer);
+        inner_strategy.new_value(rng, size)
+    }
+    fn shrink_value(&self, _value: &S2::Value) -> Vec<S2::Value> {
+        Vec::new()
+    }
+}
+
 // --- Filter combinator -------------------------------------------------
 
 /// See [`StrategyExt::filter`].
@@ -424,6 +617,29 @@ where
             .filter(|v| (self.pred)(v))
             .collect()
     }
+}
+
+// --- recursive: bounded-depth recursive strategies --------------------
+
+/// Builds a recursive strategy by stacking `inner` over `leaf` `max_depth`
+/// times. Used by [`crate::strategy::recursive`] and the
+/// `prop_recursive!` macro in the `propcheck` crate.
+///
+/// `inner` is invoked for each level with the strategy built so far — at
+/// the top level it sees a strategy that already mixes inner and leaf
+/// cases all the way down to the leaves.
+pub fn recursive<L, I, R, T>(leaf: L, inner: I, max_depth: usize) -> BoxedStrategy<T>
+where
+    L: Strategy<Value = T> + 'static,
+    R: Strategy<Value = T> + 'static,
+    I: Fn(BoxedStrategy<T>) -> R,
+    T: Clone + Debug + 'static,
+{
+    let mut current: BoxedStrategy<T> = leaf.boxed();
+    for _ in 0..max_depth {
+        current = inner(current).boxed();
+    }
+    current
 }
 
 // --- BoxedStrategy: type erasure ---------------------------------------

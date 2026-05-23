@@ -34,7 +34,7 @@ use std::any::Any;
 use std::env;
 use std::panic::{self, AssertUnwindSafe};
 
-pub use propcheck_core::{Arbitrary, Rng, XorShift64};
+pub use propcheck_core::{Arbitrary, Rng, Strategy, StrategyExt, XorShift64};
 
 mod assert;
 mod async_exec;

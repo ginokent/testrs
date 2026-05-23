@@ -244,6 +244,67 @@ macro_rules! prop_oneof {
     };
 }
 
+/// Builds a recursive-data strategy by stacking `inner` over `leaf` a
+/// fixed number of times. Useful for trees, ASTs, JSON-like values.
+///
+/// ```ignore
+/// use propcheck::{prop_recursive, prop_oneof};
+/// use propcheck::strategy::{any, just, vec_of, StrategyExt};
+///
+/// #[derive(propcheck::Arbitrary, Debug, Clone)]
+/// enum Json { Null, Bool(bool), Num(i32), Array(Vec<Json>) }
+///
+/// let s = prop_recursive! {
+///     leaf = prop_oneof![
+///         just(Json::Null),
+///         any::<bool>().map(Json::Bool),
+///         any::<i32>().map(Json::Num),
+///     ],
+///     inner = |child| prop_oneof![
+///         just(Json::Null),
+///         any::<bool>().map(Json::Bool),
+///         any::<i32>().map(Json::Num),
+///         vec_of(child, 0..4).map(Json::Array),
+///     ],
+///     max_depth = 3,
+/// };
+/// ```
+///
+/// `leaf` and the result of `inner` must yield the same value type. The
+/// `inner` closure takes a `BoxedStrategy<T>` representing the next-deeper
+/// level and returns a `BoxedStrategy<T>` for the current level.
+#[macro_export]
+macro_rules! prop_recursive {
+    (
+        leaf = $leaf:expr,
+        inner = $inner:expr,
+        max_depth = $depth:expr $(,)?
+    ) => {
+        $crate::strategy::recursive($leaf, $inner, $depth)
+    };
+}
+
+/// Convenience macro for `Strategy::filter` with a label hint included
+/// in the panic message if the filter rejects every candidate.
+///
+/// ```ignore
+/// let s = prop_filter!("only even", any::<i32>(), |n| n % 2 == 0);
+/// ```
+///
+/// Note: the label is currently informational only; rejecting candidates
+/// produce the standard `Filter: predicate rejected every candidate`
+/// message. Future versions may surface the label.
+#[macro_export]
+macro_rules! prop_filter {
+    ($label:expr, $strat:expr, $pred:expr $(,)?) => {{
+        let _ = $label;
+        $crate::strategy::StrategyExt::filter($strat, $pred)
+    }};
+    ($strat:expr, $pred:expr $(,)?) => {
+        $crate::strategy::StrategyExt::filter($strat, $pred)
+    };
+}
+
 /// Defines a function returning a composite [`Strategy`] built from named
 /// sub-strategies and a body expression.
 ///

@@ -34,7 +34,13 @@ use proc_macro::{Delimiter, TokenStream, TokenTree};
 
 /// Derives [`propcheck::Arbitrary`](https://docs.rs/propcheck) for a
 /// struct or enum.
-#[proc_macro_derive(Arbitrary)]
+///
+/// Optional per-field attribute:
+/// `#[arbitrary(strategy = <expr>)]` — generate this field using the
+/// given [`propcheck::Strategy`] instead of the field type's default
+/// `Arbitrary` impl. The expression can be a Rust expression or a string
+/// literal containing one (proptest-style).
+#[proc_macro_derive(Arbitrary, attributes(arbitrary))]
 pub fn derive_arbitrary(input: TokenStream) -> TokenStream {
     match parse_input(input) {
         Ok(ParsedItem::Struct(s)) => generate_arbitrary_impl(&s),
@@ -78,10 +84,98 @@ struct Variant {
 }
 
 #[derive(Debug)]
+struct FieldInfo {
+    /// Field name. Empty string for unnamed (tuple) fields; access them
+    /// by index in codegen.
+    name: String,
+    /// Field type, stringified as the user wrote it.
+    ty: String,
+    /// Optional `#[arbitrary(strategy = ...)]` expression. When set, the
+    /// generated impl uses `Strategy::new_value` / `Strategy::shrink_value`
+    /// instead of `Arbitrary::arbitrary` / `Arbitrary::shrink`.
+    strategy: Option<String>,
+}
+
+#[derive(Debug)]
 enum Fields {
-    Named(Vec<(String, String)>),
-    Unnamed(Vec<String>),
+    Named(Vec<FieldInfo>),
+    Unnamed(Vec<FieldInfo>),
     Unit,
+}
+
+#[derive(Default)]
+struct FieldAttrs {
+    strategy: Option<String>,
+}
+
+/// Like [`skip_attrs_and_visibility`] but extracts the
+/// `#[arbitrary(strategy = ...)]` attribute when present.
+fn collect_field_attrs(
+    iter: &mut std::iter::Peekable<proc_macro::token_stream::IntoIter>,
+) -> FieldAttrs {
+    let mut attrs = FieldAttrs::default();
+    loop {
+        match iter.peek() {
+            Some(TokenTree::Punct(p)) if p.as_char() == '#' => {
+                iter.next();
+                if let Some(TokenTree::Group(g)) = iter.peek() {
+                    let g_stream = g.stream();
+                    iter.next();
+                    if let Some(strat) = try_parse_arbitrary_attr(g_stream) {
+                        attrs.strategy = Some(strat);
+                    }
+                    // else: discard (other attributes are irrelevant to us)
+                }
+            }
+            Some(TokenTree::Ident(id)) if id.to_string() == "pub" => {
+                iter.next();
+                if let Some(TokenTree::Group(g)) = iter.peek() {
+                    if g.delimiter() == Delimiter::Parenthesis {
+                        iter.next();
+                    }
+                }
+            }
+            _ => break,
+        }
+    }
+    attrs
+}
+
+/// Parses `arbitrary ( strategy = <expr> )` and returns the expression
+/// tokens as a Rust source string. Returns `None` for any other attribute
+/// shape.
+fn try_parse_arbitrary_attr(stream: TokenStream) -> Option<String> {
+    let mut it = stream.into_iter();
+    match it.next()? {
+        TokenTree::Ident(id) if id.to_string() == "arbitrary" => {}
+        _ => return None,
+    }
+    let group = match it.next()? {
+        TokenTree::Group(g) if g.delimiter() == Delimiter::Parenthesis => g,
+        _ => return None,
+    };
+    let mut inner = group.stream().into_iter();
+    match inner.next()? {
+        TokenTree::Ident(id) if id.to_string() == "strategy" => {}
+        _ => return None,
+    }
+    match inner.next()? {
+        TokenTree::Punct(p) if p.as_char() == '=' => {}
+        _ => return None,
+    }
+    let rest: TokenStream = inner.collect();
+    let s = rest.to_string();
+    let trimmed = s.trim();
+    // If the value is a string literal, strip surrounding quotes and
+    // unescape the common cases. Otherwise emit the tokens as-is.
+    let unquoted = if trimmed.len() >= 2 && trimmed.starts_with('"') && trimmed.ends_with('"') {
+        trimmed[1..trimmed.len() - 1]
+            .replace("\\\"", "\"")
+            .replace("\\\\", "\\")
+    } else {
+        trimmed.to_string()
+    };
+    Some(unquoted)
 }
 
 fn parse_input(input: TokenStream) -> Result<ParsedItem, String> {
@@ -347,12 +441,12 @@ fn parse_generics(
     Ok((decl, use_string, type_params))
 }
 
-fn parse_named_fields(stream: TokenStream) -> Result<Vec<(String, String)>, String> {
+fn parse_named_fields(stream: TokenStream) -> Result<Vec<FieldInfo>, String> {
     let mut iter = stream.into_iter().peekable();
-    let mut out: Vec<(String, String)> = Vec::new();
+    let mut out: Vec<FieldInfo> = Vec::new();
 
     while iter.peek().is_some() {
-        skip_attrs_and_visibility(&mut iter);
+        let attrs = collect_field_attrs(&mut iter);
         let name = match iter.next() {
             Some(TokenTree::Ident(id)) => id.to_string(),
             None => break,
@@ -374,17 +468,21 @@ fn parse_named_fields(stream: TokenStream) -> Result<Vec<(String, String)>, Stri
             None => return Err("expected `:` after field name".to_string()),
         }
         let type_tokens = collect_until_top_comma(&mut iter);
-        let type_str = stream_to_string(type_tokens.into_iter().collect());
-        out.push((name, type_str));
+        let ty = stream_to_string(type_tokens.into_iter().collect());
+        out.push(FieldInfo {
+            name,
+            ty,
+            strategy: attrs.strategy,
+        });
     }
     Ok(out)
 }
 
-fn parse_tuple_fields(stream: TokenStream) -> Result<Vec<String>, String> {
+fn parse_tuple_fields(stream: TokenStream) -> Result<Vec<FieldInfo>, String> {
     let mut iter = stream.into_iter().peekable();
-    let mut out: Vec<String> = Vec::new();
+    let mut out: Vec<FieldInfo> = Vec::new();
     while iter.peek().is_some() {
-        skip_attrs_and_visibility(&mut iter);
+        let attrs = collect_field_attrs(&mut iter);
         if iter.peek().is_none() {
             break;
         }
@@ -392,10 +490,38 @@ fn parse_tuple_fields(stream: TokenStream) -> Result<Vec<String>, String> {
         if type_tokens.is_empty() {
             break;
         }
-        let type_str = stream_to_string(type_tokens.into_iter().collect());
-        out.push(type_str);
+        let ty = stream_to_string(type_tokens.into_iter().collect());
+        out.push(FieldInfo {
+            name: String::new(),
+            ty,
+            strategy: attrs.strategy,
+        });
     }
     Ok(out)
+}
+
+/// Returns the Rust expression that generates a value for a single field
+/// during `Arbitrary::arbitrary`. Uses the field's `#[arbitrary(strategy = ...)]`
+/// expression when present, otherwise the field type's default `Arbitrary`.
+fn gen_field_value(strategy: &Option<String>) -> String {
+    match strategy {
+        Some(expr) => format!(
+            "{{ let __strat = ({expr}); ::propcheck::Strategy::new_value(&__strat, rng, size) }}"
+        ),
+        None => "<_ as ::propcheck::Arbitrary>::arbitrary(rng, size)".to_string(),
+    }
+}
+
+/// Returns the Rust expression that yields an iterator over shrink
+/// candidates for a single field. `field_access` is the source for the
+/// current value (e.g. `self.foo` or `__f0`).
+fn gen_field_shrink_iter(strategy: &Option<String>, field_access: &str) -> String {
+    match strategy {
+        Some(expr) => format!(
+            "{{ let __strat = ({expr}); ::propcheck::Strategy::shrink_value(&__strat, &{field_access}) }}"
+        ),
+        None => format!("::propcheck::Arbitrary::shrink(&{field_access})"),
+    }
 }
 
 /// Collects tokens up to (but not including) the next top-level `,`, respecting
@@ -462,12 +588,14 @@ fn generate_arbitrary_impl(s: &ParsedStruct) -> TokenStream {
         ),
         Fields::Named(fields) => {
             let mut init = String::from("{");
-            for (i, (fname, _)) in fields.iter().enumerate() {
+            for (i, fi) in fields.iter().enumerate() {
                 if i > 0 {
                     init.push_str(", ");
                 }
                 init.push_str(&format!(
-                    "{fname}: <_ as ::propcheck::Arbitrary>::arbitrary(rng, size)"
+                    "{fname}: {gen}",
+                    fname = fi.name,
+                    gen = gen_field_value(&fi.strategy)
                 ));
             }
             init.push('}');
@@ -475,42 +603,49 @@ fn generate_arbitrary_impl(s: &ParsedStruct) -> TokenStream {
 
             let mut shrink = String::new();
             shrink.push_str("let mut __out: ::std::vec::Vec<Self> = ::std::vec::Vec::new();\n");
-            for (idx, (fname, _)) in fields.iter().enumerate() {
+            for (idx, fi) in fields.iter().enumerate() {
                 let other_clones: Vec<String> = fields
                     .iter()
                     .enumerate()
                     .filter(|(j, _)| *j != idx)
-                    .map(|(_, (fother, _))| format!("{fother}: ::std::clone::Clone::clone(&self.{fother})"))
+                    .map(|(_, fo)| {
+                        format!(
+                            "{}: ::std::clone::Clone::clone(&self.{})",
+                            fo.name, fo.name
+                        )
+                    })
                     .collect();
-                let other_clones_str = if other_clones.is_empty() {
+                let other_part = if other_clones.is_empty() {
                     String::new()
                 } else {
                     format!(", {}", other_clones.join(", "))
                 };
+                let field_access = format!("self.{}", fi.name);
+                let shrink_iter = gen_field_shrink_iter(&fi.strategy, &field_access);
                 shrink.push_str(&format!(
-                    "for __s in ::propcheck::Arbitrary::shrink(&self.{fname}) {{\n  __out.push(Self {{ {fname}: __s{others} }});\n}}\n",
-                    others = other_clones_str
+                    "for __s in {shrink_iter} {{\n  __out.push(Self {{ {fname}: __s{other_part} }});\n}}\n",
+                    fname = fi.name
                 ));
             }
             shrink.push_str("::std::boxed::Box::new(__out.into_iter())");
             (constructor, shrink)
         }
-        Fields::Unnamed(types) => {
+        Fields::Unnamed(fields) => {
             let mut init = String::from("(");
-            for i in 0..types.len() {
+            for (i, fi) in fields.iter().enumerate() {
                 if i > 0 {
                     init.push_str(", ");
                 }
-                init.push_str("<_ as ::propcheck::Arbitrary>::arbitrary(rng, size)");
+                init.push_str(&gen_field_value(&fi.strategy));
             }
             init.push(')');
             let constructor = format!("{name}{init}");
 
             let mut shrink = String::new();
             shrink.push_str("let mut __out: ::std::vec::Vec<Self> = ::std::vec::Vec::new();\n");
-            for idx in 0..types.len() {
+            for (idx, fi) in fields.iter().enumerate() {
                 let mut args = String::new();
-                for j in 0..types.len() {
+                for j in 0..fields.len() {
                     if j > 0 {
                         args.push_str(", ");
                     }
@@ -520,8 +655,10 @@ fn generate_arbitrary_impl(s: &ParsedStruct) -> TokenStream {
                         args.push_str(&format!("::std::clone::Clone::clone(&self.{j})"));
                     }
                 }
+                let field_access = format!("self.{idx}");
+                let shrink_iter = gen_field_shrink_iter(&fi.strategy, &field_access);
                 shrink.push_str(&format!(
-                    "for __s in ::propcheck::Arbitrary::shrink(&self.{idx}) {{\n  __out.push(Self({args}));\n}}\n"
+                    "for __s in {shrink_iter} {{\n  __out.push(Self({args}));\n}}\n"
                 ));
             }
             shrink.push_str("::std::boxed::Box::new(__out.into_iter())");
@@ -605,19 +742,18 @@ fn generate_arbitrary_impl_enum(e: &ParsedEnum) -> TokenStream {
         let body = match &v.fields {
             Fields::Unit => format!("{name}::{vname}"),
             Fields::Unnamed(fs) => {
-                let args: Vec<String> = (0..fs.len())
-                    .map(|_| {
-                        "<_ as ::propcheck::Arbitrary>::arbitrary(rng, size)".to_string()
-                    })
-                    .collect();
+                let args: Vec<String> =
+                    fs.iter().map(|fi| gen_field_value(&fi.strategy)).collect();
                 format!("{name}::{vname}({})", args.join(", "))
             }
             Fields::Named(fs) => {
                 let inits: Vec<String> = fs
                     .iter()
-                    .map(|(fname, _)| {
+                    .map(|fi| {
                         format!(
-                            "{fname}: <_ as ::propcheck::Arbitrary>::arbitrary(rng, size)"
+                            "{fname}: {gen}",
+                            fname = fi.name,
+                            gen = gen_field_value(&fi.strategy)
                         )
                     })
                     .collect();
@@ -637,11 +773,10 @@ fn generate_arbitrary_impl_enum(e: &ParsedEnum) -> TokenStream {
                 String::from("/* no shrinks for a unit variant */"),
             ),
             Fields::Unnamed(fs) => {
-                // Pattern: Self::Vname(__f0, __f1, ...)
                 let pat_args: Vec<String> = (0..fs.len()).map(|i| format!("__f{i}")).collect();
                 let pat = format!("{name}::{vname}({})", pat_args.join(", "));
                 let mut body = String::new();
-                for shrink_idx in 0..fs.len() {
+                for (shrink_idx, fi) in fs.iter().enumerate() {
                     let mut ctor_args = String::new();
                     for j in 0..fs.len() {
                         if j > 0 {
@@ -654,34 +789,52 @@ fn generate_arbitrary_impl_enum(e: &ParsedEnum) -> TokenStream {
                                 .push_str(&format!("::std::clone::Clone::clone(__f{j})"));
                         }
                     }
+                    let field_access = format!("__f{shrink_idx}");
+                    // The match binding is already a reference, so the
+                    // strategy path takes the binding directly (no extra `&`).
+                    let shrink_iter = match &fi.strategy {
+                        Some(expr) => format!(
+                            "{{ let __strat = ({expr}); ::propcheck::Strategy::shrink_value(&__strat, {field_access}) }}"
+                        ),
+                        None => format!("::propcheck::Arbitrary::shrink({field_access})"),
+                    };
                     body.push_str(&format!(
-                        "for __s in ::propcheck::Arbitrary::shrink(__f{shrink_idx}) {{\n            __out.push({name}::{vname}({ctor_args}));\n        }}\n"
+                        "for __s in {shrink_iter} {{\n            __out.push({name}::{vname}({ctor_args}));\n        }}\n"
                     ));
                 }
                 (pat, body)
             }
             Fields::Named(fs) => {
-                // Pattern: Self::Vname { f0, f1, ... }
-                let pat_args: Vec<String> =
-                    fs.iter().map(|(n, _)| n.clone()).collect();
+                let pat_args: Vec<String> = fs.iter().map(|fi| fi.name.clone()).collect();
                 let pat = format!("{name}::{vname} {{ {} }}", pat_args.join(", "));
                 let mut body = String::new();
-                for (shrink_idx, (sname, _)) in fs.iter().enumerate() {
+                for (shrink_idx, fi) in fs.iter().enumerate() {
+                    let sname = &fi.name;
                     let mut ctor_args = String::new();
-                    for (j, (jname, _)) in fs.iter().enumerate() {
+                    for (j, fo) in fs.iter().enumerate() {
                         if j > 0 {
                             ctor_args.push_str(", ");
                         }
                         if j == shrink_idx {
-                            ctor_args.push_str(&format!("{jname}: __s"));
+                            ctor_args.push_str(&format!("{}: __s", fo.name));
                         } else {
                             ctor_args.push_str(&format!(
-                                "{jname}: ::std::clone::Clone::clone({jname})"
+                                "{n}: ::std::clone::Clone::clone({n})",
+                                n = fo.name
                             ));
                         }
                     }
+                    // Same `&&` consideration as above for the enum named
+                    // case: the field binding is already a reference.
+                    let shrink_iter = if let Some(expr) = &fi.strategy {
+                        format!(
+                            "{{ let __strat = ({expr}); ::propcheck::Strategy::shrink_value(&__strat, {sname}) }}"
+                        )
+                    } else {
+                        format!("::propcheck::Arbitrary::shrink({sname})")
+                    };
                     body.push_str(&format!(
-                        "for __s in ::propcheck::Arbitrary::shrink({sname}) {{\n            __out.push({name}::{vname} {{ {ctor_args} }});\n        }}\n"
+                        "for __s in {shrink_iter} {{\n            __out.push({name}::{vname} {{ {ctor_args} }});\n        }}\n"
                     ));
                 }
                 (pat, body)
@@ -817,7 +970,7 @@ fn parse_attr_args(attr: TokenStream) -> Result<AttrArgs, String> {
 #[derive(Debug)]
 struct ParsedFn {
     name: String,
-    params: Vec<(String, String)>,
+    params: Vec<FieldInfo>,
     /// Optional return type as written by the user (e.g. `Result<(), MyErr>`).
     /// Empty string means no return type was declared.
     return_type: String,
@@ -902,22 +1055,18 @@ fn generate_test_wrapper(f: &ParsedFn, args: &AttrArgs) -> TokenStream {
     let name = &f.name;
 
     let (arg_pattern, arg_type, destructure) = match f.params.len() {
-        0 => (
-            "__arg".to_string(),
-            "()".to_string(),
-            String::new(),
-        ),
+        0 => ("__arg".to_string(), "()".to_string(), String::new()),
         1 => {
-            let (pname, pty) = &f.params[0];
+            let fi = &f.params[0];
             (
                 "__arg".to_string(),
-                pty.clone(),
-                format!("let {pname} = ::std::clone::Clone::clone(__arg);\n"),
+                fi.ty.clone(),
+                format!("let {} = ::std::clone::Clone::clone(__arg);\n", fi.name),
             )
         }
         _ => {
-            let names: Vec<&str> = f.params.iter().map(|(n, _)| n.as_str()).collect();
-            let types: Vec<&str> = f.params.iter().map(|(_, t)| t.as_str()).collect();
+            let names: Vec<&str> = f.params.iter().map(|p| p.name.as_str()).collect();
+            let types: Vec<&str> = f.params.iter().map(|p| p.ty.as_str()).collect();
             let pattern = format!("({})", names.join(", "));
             let ty = format!("({})", types.join(", "));
             (

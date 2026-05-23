@@ -50,17 +50,21 @@ will be replayed automatically at the start of the next run.
 | Feature                                | Where it lives                                |
 |----------------------------------------|-----------------------------------------------|
 | `#[derive(Arbitrary)]` (struct & enum) | `propcheck::Arbitrary` (macro namespace)      |
+| `#[arbitrary(strategy = ...)]`         | Per-field strategy override on derive         |
 | `#[propcheck]` attribute               | `propcheck::propcheck`                        |
 | `#[propcheck(cases = N, seed = N, ..)]`| Same, with `key = literal` args               |
 | `#[propcheck] async fn ...`            | Uses built-in `block_on` — no runtime needed  |
-| `prop_assert!{,_eq,_ne,_matches}!`     | `propcheck::prop_assert*!`                    |
+| `prop_assert!{,_eq,_ne,_matches,_close}!`| `propcheck::prop_assert*!`                  |
 | `prop_assume!` / `prop_skip!`          | Discard (bad input) vs skip (bad env)         |
 | `prop_with_context!`                   | Scoped context strings in failure messages    |
 | `classify!`                            | Per-case label distribution report            |
 | `IntoPropResult` (bool/`()`/`Result`)  | `?` operator + `Result<(), E>` in properties  |
 | `prop_oneof!` / `prop_compose!`        | Strategy combinator macros                    |
+| `prop_recursive!` / `prop_filter!`     | Recursive trees & filtered strategies         |
+| `Strategy::flat_map`                   | Dependent generation                          |
 | Strategy combinators                   | `propcheck::strategy::*`                      |
 | String generators                      | `propcheck::strategy::str::*` (ascii, hex, …) |
+| `char_range` / `bytes` / `f64_range`   | `propcheck::strategy::{char_range, bytes, f32_range, f64_range}` |
 | State-machine testing                  | `propcheck::state_machine::run_state_machine` |
 | Differential testing                   | `propcheck::{differential, differential_with}`|
 | Greedy / Exhaustive shrink             | `Config::shrink_mode`                         |
@@ -323,6 +327,80 @@ propcheck::differential(
 ```
 
 On disagreement, both outputs and the shrunk input are reported.
+
+### 12. Constrain `#[derive(Arbitrary)]` per-field
+
+```rust
+use propcheck::{Arbitrary, propcheck, prop_assert};
+use propcheck::strategy::{int_range, str, vec_of};
+
+#[derive(Arbitrary, Debug, Clone)]
+struct Request {
+    #[arbitrary(strategy = "str::ascii_alphanumeric(1..20)")]
+    user_id: String,
+    #[arbitrary(strategy = int_range(1024u16..65535))]
+    port: u16,
+    #[arbitrary(strategy = vec_of(int_range(0u8..200), 0..1024))]
+    payload: Vec<u8>,
+}
+
+#[propcheck]
+fn request_is_valid(r: Request) {
+    prop_assert!(!r.user_id.is_empty());
+    prop_assert!(r.port >= 1024);
+    prop_assert!(r.payload.iter().all(|b| *b < 200));
+}
+```
+
+Both the string-literal form `"expr"` (proptest-style) and the bare
+expression form are supported. The strategy expression must be visible
+where the `#[derive]` lives (typically `use propcheck::strategy::*;` at
+the top of the file). Per-field shrinking flows through the strategy:
+in the example above the `port` field will shrink toward `1024`, never
+below.
+
+### 13. Dependent generation with `flat_map`
+
+```rust
+use propcheck::strategy::{any, int_range, vec_of, StrategyExt};
+// First pick a length, then a Vec of exactly that length:
+let s = int_range(1usize..10).flat_map(|len| vec_of(any::<i32>(), len..len + 1));
+```
+
+### 14. Recursive data with `prop_recursive!`
+
+```rust
+use propcheck::{prop_oneof, prop_recursive};
+use propcheck::strategy::{any, just, vec_of, StrategyExt};
+
+#[derive(propcheck::Arbitrary, Debug, Clone)]
+enum Json { Null, Bool(bool), Num(i32), Array(Vec<Json>) }
+
+let json = prop_recursive! {
+    leaf = prop_oneof![
+        just(Json::Null),
+        any::<bool>().map(Json::Bool),
+        any::<i32>().map(Json::Num),
+    ],
+    inner = |child| prop_oneof![
+        just(Json::Null),
+        any::<i32>().map(Json::Num),
+        vec_of(child, 0..4).map(Json::Array),
+    ],
+    max_depth = 3,
+};
+```
+
+### 15. Approximate float comparison
+
+```rust
+use propcheck::{propcheck, prop_assert_close, prop_assume};
+#[propcheck]
+fn double_angle_identity(x: f64) {
+    prop_assume!(x.is_finite() && x.abs() < 1e6);
+    prop_assert_close!((2.0 * x).sin(), 2.0 * x.sin() * x.cos(), epsilon = 1e-9);
+}
+```
 
 ## Reproducing a failure
 

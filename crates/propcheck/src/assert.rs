@@ -188,6 +188,41 @@ macro_rules! prop_assert_ne {
     }};
 }
 
+/// Assert that two floating-point values are within `epsilon` of each
+/// other. Use this instead of `prop_assert_eq!` when exact equality is
+/// inappropriate (rounding error, transcendental functions, etc.).
+///
+/// Both sides must support `Sub`, `Output: Into<f64>`-style absolute-value
+/// computation; in practice the macro works for any `T` with `-` and
+/// `.abs()` returning a comparable value.
+///
+/// ```ignore
+/// prop_assert_close!(my_sin(x), x.sin(), epsilon = 1e-9);
+/// ```
+#[macro_export]
+macro_rules! prop_assert_close {
+    ($left:expr, $right:expr, epsilon = $eps:expr $(,)?) => {{
+        let __left = $left;
+        let __right = $right;
+        let __eps = $eps;
+        let __diff = (__left - __right).abs();
+        if !(__diff <= __eps) {
+            ::std::panic::panic_any($crate::PropAssertFailure {
+                message: ::std::format!(
+                    "prop_assert_close! failed at {}:{}{}\n  left:    {:?}\n  right:   {:?}\n  |diff|:  {:?}\n  epsilon: {:?}",
+                    ::std::file!(),
+                    ::std::line!(),
+                    $crate::__current_context(),
+                    __left,
+                    __right,
+                    __diff,
+                    __eps
+                ),
+            });
+        }
+    }};
+}
+
 /// Assert that a value matches a pattern. Supports optional `if` guards
 /// just like `std::matches!`.
 ///
