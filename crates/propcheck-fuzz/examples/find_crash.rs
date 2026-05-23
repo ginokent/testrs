@@ -35,14 +35,17 @@ fn main() {
         "ran {} iterations, seed = {} (set PROPCHECK_FUZZ_SEED={} to reproduce)",
         report.iterations, report.seed, report.seed
     );
-    match report.failure {
-        None => println!("no crashes found"),
-        Some(f) => println!(
-            "crash at iter {}: input = {:?} ({} bytes), message = {:?}",
-            f.iteration,
-            f.input,
-            f.input.len(),
-            f.message
-        ),
+    if report.failures.is_empty() {
+        println!("no crashes found");
+    } else {
+        for f in &report.failures {
+            println!(
+                "crash at iter {}: input = {:?} ({} bytes), message = {:?}",
+                f.iteration,
+                f.input,
+                f.input.len(),
+                f.message
+            );
+        }
     }
 }

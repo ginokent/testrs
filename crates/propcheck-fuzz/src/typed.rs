@@ -95,6 +95,7 @@ mod tests {
                 initial_corpus: vec![b"seed-input".to_vec()],
                 minimize_steps: 100,
                 silence_panic_hook: false,
+                ..FuzzConfig::default()
             },
             size: 16,
         };
@@ -103,7 +104,7 @@ mod tests {
                 panic!("triggered on {n:#x}");
             }
         });
-        assert!(report.failure.is_some(), "should find a crash");
+        assert!(report.failure().is_some(), "should find a crash");
     }
 
     #[test]
@@ -116,10 +117,11 @@ mod tests {
                 initial_corpus: vec![b"seed".to_vec()],
                 minimize_steps: 50,
                 silence_panic_hook: false,
+                ..FuzzConfig::default()
             },
             size: 16,
         };
         let report = fuzz_typed::<Vec<u8>, _>(cfg, |_v: &Vec<u8>| {});
-        assert!(report.failure.is_none());
+        assert!(report.failure().is_none());
     }
 }

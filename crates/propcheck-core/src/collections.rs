@@ -3,9 +3,19 @@
 
 use crate::arbitrary::Arbitrary;
 use crate::rng::Rng;
+use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
+use std::ffi::OsString;
 use std::hash::Hash;
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6};
+use std::num::{
+    NonZeroI16, NonZeroI32, NonZeroI64, NonZeroI8, NonZeroIsize, NonZeroU16, NonZeroU32,
+    NonZeroU64, NonZeroU8, NonZeroUsize,
+};
 use std::ops::Range;
+use std::path::PathBuf;
+use std::rc::Rc;
+use std::sync::Arc;
 use std::time::Duration;
 
 // --- VecDeque<T> --------------------------------------------------------
@@ -176,6 +186,232 @@ where
     }
 }
 
+// --- Rc<T>, Arc<T> ------------------------------------------------------
+
+impl<T: Arbitrary> Arbitrary for Rc<T> {
+    fn arbitrary<R: Rng + ?Sized>(rng: &mut R, size: usize) -> Self {
+        Rc::new(T::arbitrary(rng, size))
+    }
+    fn shrink(&self) -> Box<dyn Iterator<Item = Self> + '_> {
+        let v: Vec<T> = (**self).shrink().collect();
+        Box::new(v.into_iter().map(Rc::new))
+    }
+}
+
+impl<T: Arbitrary> Arbitrary for Arc<T> {
+    fn arbitrary<R: Rng + ?Sized>(rng: &mut R, size: usize) -> Self {
+        Arc::new(T::arbitrary(rng, size))
+    }
+    fn shrink(&self) -> Box<dyn Iterator<Item = Self> + '_> {
+        let v: Vec<T> = (**self).shrink().collect();
+        Box::new(v.into_iter().map(Arc::new))
+    }
+}
+
+// --- Cell<T>, RefCell<T> -----------------------------------------------
+
+impl<T: Arbitrary + Copy> Arbitrary for Cell<T> {
+    fn arbitrary<R: Rng + ?Sized>(rng: &mut R, size: usize) -> Self {
+        Cell::new(T::arbitrary(rng, size))
+    }
+    fn shrink(&self) -> Box<dyn Iterator<Item = Self> + '_> {
+        let v: Vec<T> = self.get().shrink().collect();
+        Box::new(v.into_iter().map(Cell::new))
+    }
+}
+
+impl<T: Arbitrary> Arbitrary for RefCell<T> {
+    fn arbitrary<R: Rng + ?Sized>(rng: &mut R, size: usize) -> Self {
+        RefCell::new(T::arbitrary(rng, size))
+    }
+    fn shrink(&self) -> Box<dyn Iterator<Item = Self> + '_> {
+        let inner = self.borrow().clone();
+        let v: Vec<T> = inner.shrink().collect();
+        Box::new(v.into_iter().map(RefCell::new))
+    }
+}
+
+// --- PathBuf, OsString --------------------------------------------------
+
+impl Arbitrary for PathBuf {
+    fn arbitrary<R: Rng + ?Sized>(rng: &mut R, size: usize) -> Self {
+        // Bias toward path-like strings: occasionally insert '/' or '\\' so
+        // generators produce multi-component paths.
+        let s: String = Arbitrary::arbitrary(rng, size);
+        PathBuf::from(s)
+    }
+    fn shrink(&self) -> Box<dyn Iterator<Item = Self> + '_> {
+        let s = self.to_string_lossy().into_owned();
+        let shrinks: Vec<String> = s.shrink().collect();
+        Box::new(shrinks.into_iter().map(PathBuf::from))
+    }
+}
+
+impl Arbitrary for OsString {
+    fn arbitrary<R: Rng + ?Sized>(rng: &mut R, size: usize) -> Self {
+        let s: String = Arbitrary::arbitrary(rng, size);
+        OsString::from(s)
+    }
+    fn shrink(&self) -> Box<dyn Iterator<Item = Self> + '_> {
+        let s = self.to_string_lossy().into_owned();
+        let shrinks: Vec<String> = s.shrink().collect();
+        Box::new(shrinks.into_iter().map(OsString::from))
+    }
+}
+
+// --- IP / Socket addresses ---------------------------------------------
+
+impl Arbitrary for Ipv4Addr {
+    fn arbitrary<R: Rng + ?Sized>(rng: &mut R, _size: usize) -> Self {
+        let mut octets = [0u8; 4];
+        rng.fill_bytes(&mut octets);
+        Ipv4Addr::from(octets)
+    }
+    fn shrink(&self) -> Box<dyn Iterator<Item = Self> + '_> {
+        let bytes = self.octets();
+        let shrinks: Vec<[u8; 4]> = bytes.shrink().collect();
+        Box::new(shrinks.into_iter().map(Ipv4Addr::from))
+    }
+}
+
+impl Arbitrary for Ipv6Addr {
+    fn arbitrary<R: Rng + ?Sized>(rng: &mut R, _size: usize) -> Self {
+        let mut octets = [0u8; 16];
+        rng.fill_bytes(&mut octets);
+        Ipv6Addr::from(octets)
+    }
+    fn shrink(&self) -> Box<dyn Iterator<Item = Self> + '_> {
+        let bytes = self.octets();
+        let shrinks: Vec<[u8; 16]> = bytes.shrink().collect();
+        Box::new(shrinks.into_iter().map(Ipv6Addr::from))
+    }
+}
+
+impl Arbitrary for IpAddr {
+    fn arbitrary<R: Rng + ?Sized>(rng: &mut R, size: usize) -> Self {
+        if rng.gen_bool() {
+            IpAddr::V4(Ipv4Addr::arbitrary(rng, size))
+        } else {
+            IpAddr::V6(Ipv6Addr::arbitrary(rng, size))
+        }
+    }
+    fn shrink(&self) -> Box<dyn Iterator<Item = Self> + '_> {
+        match self {
+            IpAddr::V4(a) => {
+                let v: Vec<Ipv4Addr> = a.shrink().collect();
+                Box::new(v.into_iter().map(IpAddr::V4))
+            }
+            IpAddr::V6(a) => {
+                let v: Vec<Ipv6Addr> = a.shrink().collect();
+                Box::new(v.into_iter().map(IpAddr::V6))
+            }
+        }
+    }
+}
+
+impl Arbitrary for SocketAddrV4 {
+    fn arbitrary<R: Rng + ?Sized>(rng: &mut R, size: usize) -> Self {
+        SocketAddrV4::new(Ipv4Addr::arbitrary(rng, size), u16::arbitrary(rng, size))
+    }
+    fn shrink(&self) -> Box<dyn Iterator<Item = Self> + '_> {
+        let ip = *self.ip();
+        let port = self.port();
+        let mut out: Vec<Self> = Vec::new();
+        for ip_s in ip.shrink() {
+            out.push(SocketAddrV4::new(ip_s, port));
+        }
+        for p in port.shrink() {
+            out.push(SocketAddrV4::new(ip, p));
+        }
+        Box::new(out.into_iter())
+    }
+}
+
+impl Arbitrary for SocketAddrV6 {
+    fn arbitrary<R: Rng + ?Sized>(rng: &mut R, size: usize) -> Self {
+        SocketAddrV6::new(
+            Ipv6Addr::arbitrary(rng, size),
+            u16::arbitrary(rng, size),
+            0,
+            0,
+        )
+    }
+    fn shrink(&self) -> Box<dyn Iterator<Item = Self> + '_> {
+        let ip = *self.ip();
+        let port = self.port();
+        let mut out: Vec<Self> = Vec::new();
+        for ip_s in ip.shrink() {
+            out.push(SocketAddrV6::new(ip_s, port, 0, 0));
+        }
+        for p in port.shrink() {
+            out.push(SocketAddrV6::new(ip, p, 0, 0));
+        }
+        Box::new(out.into_iter())
+    }
+}
+
+impl Arbitrary for SocketAddr {
+    fn arbitrary<R: Rng + ?Sized>(rng: &mut R, size: usize) -> Self {
+        if rng.gen_bool() {
+            SocketAddr::V4(SocketAddrV4::arbitrary(rng, size))
+        } else {
+            SocketAddr::V6(SocketAddrV6::arbitrary(rng, size))
+        }
+    }
+    fn shrink(&self) -> Box<dyn Iterator<Item = Self> + '_> {
+        match self {
+            SocketAddr::V4(a) => {
+                let v: Vec<SocketAddrV4> = a.shrink().collect();
+                Box::new(v.into_iter().map(SocketAddr::V4))
+            }
+            SocketAddr::V6(a) => {
+                let v: Vec<SocketAddrV6> = a.shrink().collect();
+                Box::new(v.into_iter().map(SocketAddr::V6))
+            }
+        }
+    }
+}
+
+// --- NonZero integers ---------------------------------------------------
+
+macro_rules! impl_arbitrary_nonzero {
+    ($($nz:ty => $base:ty),* $(,)?) => {$(
+        impl Arbitrary for $nz {
+            fn arbitrary<R: Rng + ?Sized>(rng: &mut R, size: usize) -> Self {
+                // Retry up to ~30 times; the probability of drawing zero is
+                // ~1/2^bits for the bit-width-capped generator, so this loop
+                // almost never spins more than once.
+                for _ in 0..32 {
+                    let v: $base = Arbitrary::arbitrary(rng, size);
+                    if let Some(nz) = <$nz>::new(v) {
+                        return nz;
+                    }
+                }
+                // Fallback: 1 is always valid for unsigned; for signed too.
+                <$nz>::new(1).unwrap()
+            }
+            fn shrink(&self) -> Box<dyn Iterator<Item = Self> + '_> {
+                let v = self.get();
+                let shrinks: Vec<$base> = v.shrink().collect();
+                Box::new(shrinks.into_iter().filter_map(<$nz>::new))
+            }
+        }
+    )*};
+}
+
+impl_arbitrary_nonzero!(
+    NonZeroU8 => u8,
+    NonZeroU16 => u16,
+    NonZeroU32 => u32,
+    NonZeroU64 => u64,
+    NonZeroUsize => usize,
+    NonZeroI8 => i8,
+    NonZeroI16 => i16,
+    NonZeroI32 => i32,
+    NonZeroI64 => i64,
+    NonZeroIsize => isize,
+);
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -243,5 +479,72 @@ mod tests {
             let r: Range<i32> = Arbitrary::arbitrary(&mut rng, 50);
             assert!(r.start <= r.end);
         }
+    }
+
+    #[test]
+    fn rc_and_arc_arbitrary_work() {
+        let mut rng = r();
+        let _: Rc<String> = Arbitrary::arbitrary(&mut rng, 10);
+        let _: Arc<Vec<u8>> = Arbitrary::arbitrary(&mut rng, 10);
+        let rc = Rc::new(42u32);
+        let v: Vec<Rc<u32>> = rc.shrink().collect();
+        assert!(v.iter().any(|x| **x == 0));
+    }
+
+    #[test]
+    fn cell_and_refcell_arbitrary_work() {
+        let mut rng = r();
+        let _: Cell<u32> = Arbitrary::arbitrary(&mut rng, 10);
+        let _: RefCell<String> = Arbitrary::arbitrary(&mut rng, 10);
+    }
+
+    #[test]
+    fn pathbuf_arbitrary_and_shrinks() {
+        let mut rng = r();
+        let _: PathBuf = Arbitrary::arbitrary(&mut rng, 20);
+        let p = PathBuf::from("hello/world");
+        let v: Vec<PathBuf> = p.shrink().collect();
+        assert!(v.iter().any(|p| p.as_os_str().is_empty()));
+    }
+
+    #[test]
+    fn ip_address_arbitrary_works() {
+        let mut rng = r();
+        for _ in 0..50 {
+            let _: Ipv4Addr = Arbitrary::arbitrary(&mut rng, 10);
+            let _: Ipv6Addr = Arbitrary::arbitrary(&mut rng, 10);
+            let _: IpAddr = Arbitrary::arbitrary(&mut rng, 10);
+        }
+    }
+
+    #[test]
+    fn socket_address_arbitrary_works() {
+        let mut rng = r();
+        for _ in 0..50 {
+            let _: SocketAddrV4 = Arbitrary::arbitrary(&mut rng, 10);
+            let _: SocketAddrV6 = Arbitrary::arbitrary(&mut rng, 10);
+            let _: SocketAddr = Arbitrary::arbitrary(&mut rng, 10);
+        }
+    }
+
+    #[test]
+    fn nonzero_never_zero() {
+        let mut rng = r();
+        for _ in 0..200 {
+            let n: NonZeroU32 = Arbitrary::arbitrary(&mut rng, 50);
+            assert!(n.get() != 0);
+            let n: NonZeroI32 = Arbitrary::arbitrary(&mut rng, 50);
+            assert!(n.get() != 0);
+        }
+    }
+
+    #[test]
+    fn nonzero_shrinks_skip_zero() {
+        let n = NonZeroU32::new(100).unwrap();
+        let v: Vec<NonZeroU32> = n.shrink().collect();
+        // No shrink should ever be zero (filtered by NonZeroU32::new).
+        assert!(v.iter().all(|x| x.get() != 0));
+        // At least one shrink should be present.
+        assert!(!v.is_empty());
     }
 }

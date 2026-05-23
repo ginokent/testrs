@@ -442,18 +442,92 @@ fn generate_arbitrary_impl(s: &ParsedStruct) -> TokenStream {
 // ---------------------------------------------------------------------------
 
 /// Wraps a free function as a property-based test driven by `propcheck::run`.
+///
+/// Accepts optional `key = literal` arguments:
+/// - `cases = N`         — total passing cases (default 100)
+/// - `seed = N`          — fixed PRNG seed
+/// - `max_shrinks = N`   — shrink-step budget
+/// - `max_size = N`      — generator size cap
+/// - `max_discards = N`  — discard budget before abort
 #[proc_macro_attribute]
-pub fn propcheck(_attr: TokenStream, item: TokenStream) -> TokenStream {
+pub fn propcheck(attr: TokenStream, item: TokenStream) -> TokenStream {
+    let args = match parse_attr_args(attr) {
+        Ok(a) => a,
+        Err(e) => return compile_error(&e),
+    };
     match parse_fn(item) {
-        Ok(f) => generate_test_wrapper(&f),
+        Ok(f) => generate_test_wrapper(&f, &args),
         Err(e) => compile_error(&e),
     }
+}
+
+#[derive(Debug, Default)]
+struct AttrArgs {
+    cases: Option<u64>,
+    seed: Option<u64>,
+    max_shrinks: Option<u64>,
+    max_size: Option<u64>,
+    max_discards: Option<u64>,
+}
+
+impl AttrArgs {
+    fn any_set(&self) -> bool {
+        self.cases.is_some()
+            || self.seed.is_some()
+            || self.max_shrinks.is_some()
+            || self.max_size.is_some()
+            || self.max_discards.is_some()
+    }
+}
+
+fn parse_attr_args(attr: TokenStream) -> Result<AttrArgs, String> {
+    let mut iter = attr.into_iter().peekable();
+    let mut args = AttrArgs::default();
+    while iter.peek().is_some() {
+        let key = match iter.next() {
+            Some(TokenTree::Ident(id)) => id.to_string(),
+            Some(t) => return Err(format!("expected key identifier, found `{}`", tt_display(&t))),
+            None => break,
+        };
+        match iter.next() {
+            Some(TokenTree::Punct(p)) if p.as_char() == '=' => {}
+            other => {
+                return Err(format!(
+                    "expected `=` after `{key}`, found `{}`",
+                    other.as_ref().map(tt_display).unwrap_or_default()
+                ))
+            }
+        }
+        let value_str = match iter.next() {
+            Some(TokenTree::Literal(lit)) => lit.to_string(),
+            Some(t) => return Err(format!("expected integer literal for `{key}`, found `{}`", tt_display(&t))),
+            None => return Err(format!("expected value for `{key}`")),
+        };
+        let value: u64 = value_str
+            .parse()
+            .map_err(|e| format!("invalid integer literal for `{key}` ({value_str:?}): {e}"))?;
+        match key.as_str() {
+            "cases" => args.cases = Some(value),
+            "seed" => args.seed = Some(value),
+            "max_shrinks" => args.max_shrinks = Some(value),
+            "max_size" => args.max_size = Some(value),
+            "max_discards" => args.max_discards = Some(value),
+            other => return Err(format!("unknown #[propcheck] argument: `{other}`")),
+        }
+        if matches!(iter.peek(), Some(TokenTree::Punct(p)) if p.as_char() == ',') {
+            iter.next();
+        }
+    }
+    Ok(args)
 }
 
 #[derive(Debug)]
 struct ParsedFn {
     name: String,
     params: Vec<(String, String)>,
+    /// Optional return type as written by the user (e.g. `Result<(), MyErr>`).
+    /// Empty string means no return type was declared.
+    return_type: String,
     body: String,
 }
 
@@ -468,7 +542,6 @@ fn parse_fn(input: TokenStream) -> Result<ParsedFn, String> {
             break;
         }
         iter.next();
-        // Skip extern "C" string.
         if s == "extern" {
             if let Some(TokenTree::Literal(_)) = iter.peek() {
                 iter.next();
@@ -488,33 +561,32 @@ fn parse_fn(input: TokenStream) -> Result<ParsedFn, String> {
         Some(TokenTree::Ident(id)) => id.to_string(),
         _ => return Err("expected function name".to_string()),
     };
-    // Skip generics for now: not supported on test functions.
     if matches!(iter.peek(), Some(TokenTree::Punct(p)) if p.as_char() == '<') {
         return Err("generic test functions are not supported by #[propcheck]".to_string());
     }
-    // Parameters in parens.
     let param_group = match iter.next() {
         Some(TokenTree::Group(g)) if g.delimiter() == Delimiter::Parenthesis => g,
         _ => return Err("expected `(...)` parameter list".to_string()),
     };
     let params = parse_named_fields(param_group.stream())?;
-    // Optional return type — accepted but ignored.
+
+    // Optional return type: capture verbatim if present.
+    let mut return_type = String::new();
     if matches!(iter.peek(), Some(TokenTree::Punct(p)) if p.as_char() == '-') {
         iter.next();
-        if let Some(TokenTree::Punct(p)) = iter.next() {
-            if p.as_char() != '>' {
-                return Err("expected `->` in return type".to_string());
-            }
+        match iter.next() {
+            Some(TokenTree::Punct(p)) if p.as_char() == '>' => {}
+            _ => return Err("expected `->` in return type".to_string()),
         }
-        // Consume tokens until the body brace.
+        let mut ret_tokens: Vec<TokenTree> = Vec::new();
         while let Some(t) = iter.peek() {
             if matches!(t, TokenTree::Group(g) if g.delimiter() == Delimiter::Brace) {
                 break;
             }
-            iter.next();
+            ret_tokens.push(iter.next().unwrap());
         }
+        return_type = stream_to_string(ret_tokens.into_iter().collect());
     }
-    // Body group.
     let body_group = match iter.next() {
         Some(TokenTree::Group(g)) if g.delimiter() == Delimiter::Brace => g,
         _ => return Err("expected function body `{ ... }`".to_string()),
@@ -522,11 +594,12 @@ fn parse_fn(input: TokenStream) -> Result<ParsedFn, String> {
     Ok(ParsedFn {
         name,
         params,
+        return_type,
         body: body_group.stream().to_string(),
     })
 }
 
-fn generate_test_wrapper(f: &ParsedFn) -> TokenStream {
+fn generate_test_wrapper(f: &ParsedFn, args: &AttrArgs) -> TokenStream {
     let name = &f.name;
 
     let (arg_pattern, arg_type, destructure) = match f.params.len() {
@@ -551,26 +624,74 @@ fn generate_test_wrapper(f: &ParsedFn) -> TokenStream {
             (
                 "__arg".to_string(),
                 ty,
-                format!("let {pattern} = ::std::clone::Clone::clone(__arg);\n", pattern = pattern),
+                format!("let {pattern} = ::std::clone::Clone::clone(__arg);\n"),
             )
         }
     };
 
     let body = &f.body;
     let name_str = format!("{name:?}");
+    // If the user declared a return type, preserve it on the inner closure
+    // so the `?` operator and other Result-returning bodies type-infer
+    // unambiguously.
+    let body_ret = if f.return_type.is_empty() {
+        String::new()
+    } else {
+        format!(" -> {}", f.return_type)
+    };
+
+    let inner_closure = format!(
+        "|{arg_pattern}: &{arg_type}| {{
+            {destructure}
+            let __body = || {body_ret} {{
+                {body}
+            }};
+            ::propcheck::IntoPropResult::into_prop_result(__body())
+        }}"
+    );
+
+    // Choose entry point: `run` for default config, `run_with` when any
+    // attribute argument is set.
+    let invocation = if args.any_set() {
+        let mut overrides = String::new();
+        if let Some(v) = args.cases {
+            overrides.push_str(&format!("            cases: {v}usize,\n"));
+        }
+        if let Some(v) = args.seed {
+            overrides.push_str(&format!("            seed: {v}u64,\n"));
+        }
+        if let Some(v) = args.max_shrinks {
+            overrides.push_str(&format!("            max_shrinks: {v}usize,\n"));
+        }
+        if let Some(v) = args.max_size {
+            overrides.push_str(&format!("            max_size: {v}usize,\n"));
+        }
+        if let Some(v) = args.max_discards {
+            overrides.push_str(&format!("            max_discards: {v}usize,\n"));
+        }
+        format!(
+            "::propcheck::run_with::<{arg_type}, _, _>(
+                {name_str},
+                ::propcheck::Config {{
+{overrides}                    ..::propcheck::Config::default()
+                }},
+                {inner_closure},
+            )"
+        )
+    } else {
+        format!(
+            "::propcheck::run::<{arg_type}, _, _>(
+                {name_str},
+                {inner_closure},
+            )"
+        )
+    };
 
     let code = format!(
         "#[test]
         fn {name}() {{
-            ::propcheck::run::<{arg_type}, _>({name_str}, |{arg_pattern}: &{arg_type}| {{
-                {destructure}
-                let __body = || {{
-                    {body}
-                }};
-                __body();
-                true
-            }});
-        }}",
+            {invocation};
+        }}"
     );
 
     code.parse().unwrap_or_else(|e| {

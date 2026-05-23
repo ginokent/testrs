@@ -31,11 +31,39 @@ use propcheck::{propcheck, prop_assert_eq};
 fn addition_is_commutative(a: i32, b: i32) {
     prop_assert_eq!(a.wrapping_add(b), b.wrapping_add(a));
 }
+
+// Override defaults with attribute args:
+#[propcheck(cases = 10_000, seed = 42, max_size = 200)]
+fn stress_test(v: Vec<u32>) {
+    prop_assert_eq!(v.len(), v.iter().count());
+}
 ```
 
 `cargo test` runs the property 100 times by default. On failure, the runner
 shrinks the inputs to a minimal counterexample, prints both sides of the
-assertion, and emits a `PROPCHECK_SEED` so the run can be reproduced.
+assertion, and emits a `PROPCHECK_SEED` so the run can be reproduced. The
+same seed is appended to `target/propcheck-regressions/<test>.txt` so it
+will be replayed automatically at the start of the next run.
+
+## What's in the box
+
+| Feature                                | Where it lives                                |
+|----------------------------------------|-----------------------------------------------|
+| `#[derive(Arbitrary)]`                 | `propcheck::Arbitrary` (macro namespace)      |
+| `#[propcheck]` attribute               | `propcheck::propcheck`                        |
+| `#[propcheck(cases = N, seed = N, ..)]`| Same, with `key = literal` args               |
+| `prop_assert!{,_eq,_ne}!`              | `propcheck::prop_assert*!`                    |
+| `prop_assume!`                         | `propcheck::prop_assume!`                     |
+| `classify!`                            | `propcheck::classify!`                        |
+| `IntoPropResult` (bool/`()`/`Result`)  | `propcheck::IntoPropResult`                   |
+| Regression auto-replay                 | On by default; toggle `Config::regression_replay` |
+| Strategy combinators                   | `propcheck::strategy::*`                      |
+| `prop_oneof![..]` / `prop_oneof![w => ..]` | `propcheck::prop_oneof!`                  |
+| Mutation byte fuzzer                   | `propcheck_fuzz::fuzz`                        |
+| Typed fuzzer (`Arbitrary`-driven)      | `propcheck_fuzz::fuzz_typed`                  |
+| Fuzz dictionary                        | `FuzzConfig::dictionary`                      |
+| Continue after crash + dedup           | `FuzzConfig::{continue_after_crash, dedup_by_message}` |
+| Corpus / crash persistence             | `FuzzConfig::{corpus_dir, crash_dir}`         |
 
 ## Patterns
 
@@ -157,13 +185,64 @@ fn json_query_never_panics() {
     let report = fuzz_typed::<String, _>(TypedFuzzConfig::default(), |s: &String| {
         let _ = json::query(s);
     });
-    assert!(report.failure.is_none());
+    assert!(report.failure().is_none());
 }
 ```
 
 Any type with an `Arbitrary` impl can drive `fuzz_typed`. The mutator
 operates on the byte seed, so it explores a wide variety of inputs without
 needing a hand-written `&[u8] → T` decoder.
+
+### 7. Diagnose generator distribution with `classify!`
+
+```rust
+use propcheck::{run, classify};
+
+run("sort handles every input", |v: &Vec<i32>| {
+    classify!(v.is_empty(), "empty");
+    classify!(v.len() > 100, "large");
+    classify!(v.windows(2).any(|w| w[0] == w[1]), "has-duplicates");
+    let mut s = v.clone();
+    s.sort();
+    s.windows(2).all(|w| w[0] <= w[1])
+});
+// Output ends with:
+//   classifications:
+//      40.0%  empty            (40/100)
+//      20.0%  has-duplicates   (20/100)
+//      10.0%  large            (10/100)
+```
+
+If "large" is 0% you know your test isn't actually exercising the long-input
+path and need to bump `max_size` or use a custom strategy.
+
+### 8. Collect every distinct crash from a fuzz run
+
+```rust
+use propcheck_fuzz::{fuzz, FuzzConfig};
+use std::path::PathBuf;
+
+let report = fuzz(
+    FuzzConfig {
+        iterations: 100_000,
+        dictionary: vec![b"GET ".to_vec(), b"POST ".to_vec(), b"HTTP/1.1".to_vec()],
+        continue_after_crash: true,
+        dedup_by_message: true,
+        corpus_dir: Some(PathBuf::from("target/fuzz-corpus")),
+        crash_dir: Some(PathBuf::from("target/fuzz-crashes")),
+        ..FuzzConfig::default()
+    },
+    |bytes: &[u8]| { let _ = http::parse(bytes); },
+);
+for f in &report.failures {
+    eprintln!("crash: {} (input: {} bytes)", f.message, f.input.len());
+}
+```
+
+`dictionary` lifts the fuzzer past multi-byte gates a dumb mutator would
+take eons to discover. `continue_after_crash` + `dedup_by_message` collect
+every unique panic. `crash_dir` saves a `.bin` reproducer and matching
+`.txt` metadata for each one.
 
 ## Reproducing a failure
 
@@ -178,7 +257,15 @@ Failures print a seed:
   shrunk:   ...
 ```
 
-Set `PROPCHECK_SEED=12345 cargo test my_test` to reproduce deterministically.
+Three ways to reproduce:
+
+1. **Automatic** — failing seeds are appended to
+   `target/propcheck-regressions/<test>.txt` and replayed first on the next
+   run. No manual step required; just run `cargo test` again.
+2. **Env var** — `PROPCHECK_SEED=12345 cargo test my_test`.
+3. **Config override** — `#[propcheck(seed = 12345)]` on the test function,
+   or `Config { seed: 12345, ..Config::default() }` for `run_with`.
+
 The fuzz crate uses `PROPCHECK_FUZZ_SEED` in the same way.
 
 ## Tuning a run

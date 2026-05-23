@@ -77,6 +77,7 @@ fn derive_failure_shrinks_through_fields() {
         max_size: 30,
         max_discards: 1000,
         silence_panic_hook: false,
+        regression_replay: false,
     };
     // Property: NamedStruct.a should never be > 200.
     let outcome = forall_with(cfg, |s: &NamedStruct| s.a <= 200);
@@ -121,4 +122,29 @@ fn attribute_macro_with_derive(s: NamedStruct) {
     // Use prop_assume! to skip cases where the property would be trivial.
     propcheck::prop_assume!(!s.c.is_empty());
     propcheck::prop_assert_eq!(s.c.len(), s.c.iter().count());
+}
+
+#[propcheck::propcheck(cases = 50, max_size = 20)]
+fn attribute_macro_with_args(n: u8) {
+    // The runner should run exactly 50 cases (we can't observe that from
+    // here directly, but the test compiling and passing with the override
+    // proves the parser accepts it).
+    propcheck::prop_assert_eq!(n.wrapping_add(0), n);
+}
+
+#[propcheck::propcheck(seed = 12345)]
+fn attribute_macro_with_seed(n: u32) {
+    // Fixed seed -> deterministic run. We can't easily observe the seed
+    // here, but the function must compile and pass with a seed override.
+    propcheck::prop_assert!(n == n);
+}
+
+// Result return type using the `?` operator.
+#[propcheck::propcheck]
+fn attribute_macro_with_result(s: String) -> Result<(), std::num::ParseIntError> {
+    propcheck::prop_assume!(!s.is_empty());
+    if s.chars().all(|c| c.is_ascii_digit()) {
+        let _n: u128 = s.parse()?;
+    }
+    Ok(())
 }

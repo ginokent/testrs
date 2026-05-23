@@ -1,104 +1,81 @@
 //! Runner variants driven by a [`Strategy`] instead of the type's
 //! [`Arbitrary`] impl.
-//!
-//! When a test wants a constrained generator (e.g. `int_range(0..100)`
-//! rather than the full `i32` distribution), pass it to
-//! [`forall_strategy`] or [`run_strategy`].
 
 use std::fmt::Debug;
 
 use propcheck_core::strategy::Strategy;
 use propcheck_core::XorShift64;
 
+use crate::classify::{self, Classifications};
 use crate::panic_hook::SilentPanicHook;
-use crate::{run_prop, CaseOutcome, Config, Outcome};
+use crate::{run_prop, CaseOutcome, Config, IntoPropResult, Outcome, PropResult};
 
 /// Runs `prop` against values produced by `strategy`.
-pub fn forall_strategy<S, F>(strategy: S, prop: F) -> Outcome<S::Value>
+pub fn forall_strategy<S, F, R>(strategy: S, prop: F) -> Outcome<S::Value>
 where
     S: Strategy,
     S::Value: Debug,
-    F: FnMut(&S::Value) -> bool,
+    F: FnMut(&S::Value) -> R,
+    R: IntoPropResult,
 {
     forall_strategy_with(strategy, Config::default(), prop)
 }
 
 /// Runs `prop` against values produced by `strategy` with a custom config.
-pub fn forall_strategy_with<S, F>(strategy: S, cfg: Config, mut prop: F) -> Outcome<S::Value>
+pub fn forall_strategy_with<S, F, R>(
+    strategy: S,
+    cfg: Config,
+    mut prop: F,
+) -> Outcome<S::Value>
 where
     S: Strategy,
     S::Value: Debug,
-    F: FnMut(&S::Value) -> bool,
+    F: FnMut(&S::Value) -> R,
+    R: IntoPropResult,
 {
+    let mut wrapped = move |val: &S::Value| prop(val).into_prop_result();
     let _guard = if cfg.silence_panic_hook {
         Some(SilentPanicHook::install())
     } else {
         None
     };
-    let mut rng = XorShift64::seed_from_u64(cfg.seed);
-    let target_cases = cfg.cases.max(1);
-    let mut passed = 0usize;
-    let mut discarded = 0usize;
-
-    while passed < target_cases {
-        if discarded > cfg.max_discards {
-            return Outcome::Aborted {
-                reason: format!("too many discards: {discarded} (limit {})", cfg.max_discards),
-                cases: passed,
-                discarded,
-                seed: cfg.seed,
-            };
-        }
-        let size = 1 + (passed * cfg.max_size / target_cases).min(cfg.max_size);
-        let val = strategy.new_value(&mut rng, size);
-        match run_prop(&mut prop, &val) {
-            CaseOutcome::Pass => passed += 1,
-            CaseOutcome::Discard => discarded += 1,
-            CaseOutcome::Fail(message) => {
-                let shrunk = shrink_with_strategy(&strategy, val.clone(), &mut prop, cfg.max_shrinks);
-                return Outcome::Failed {
-                    original: val,
-                    shrunk,
-                    message,
-                    seed: cfg.seed,
-                    attempt: passed + 1,
-                    discarded,
-                };
-            }
-        }
-    }
-    Outcome::Passed {
-        cases: passed,
-        discarded,
-    }
+    run_strategy_loop(&strategy, &cfg, &mut wrapped)
 }
 
 /// Like [`forall_strategy`] but panics on failure, suitable for `#[test]`.
-pub fn run_strategy<S, F>(name: &str, strategy: S, prop: F)
+pub fn run_strategy<S, F, R>(name: &str, strategy: S, prop: F)
 where
     S: Strategy,
     S::Value: Debug,
-    F: FnMut(&S::Value) -> bool,
+    F: FnMut(&S::Value) -> R,
+    R: IntoPropResult,
 {
     run_strategy_with(name, strategy, Config::default(), prop)
 }
 
 /// Like [`forall_strategy_with`] but panics on failure.
-pub fn run_strategy_with<S, F>(name: &str, strategy: S, cfg: Config, prop: F)
+pub fn run_strategy_with<S, F, R>(name: &str, strategy: S, cfg: Config, prop: F)
 where
     S: Strategy,
     S::Value: Debug,
-    F: FnMut(&S::Value) -> bool,
+    F: FnMut(&S::Value) -> R,
+    R: IntoPropResult,
 {
     let seed = cfg.seed;
     match forall_strategy_with(strategy, cfg, prop) {
-        Outcome::Passed { cases, discarded } => {
-            if discarded == 0 {
-                eprintln!("[propcheck] {name}: ok ({cases} cases, seed={seed})");
+        Outcome::Passed {
+            cases,
+            discarded,
+            classifications,
+        } => {
+            let dpart = if discarded == 0 {
+                String::new()
             } else {
-                eprintln!(
-                    "[propcheck] {name}: ok ({cases} cases, {discarded} discarded, seed={seed})"
-                );
+                format!(", {discarded} discarded")
+            };
+            eprintln!("[propcheck] {name}: ok ({cases} cases{dpart}, seed={seed})");
+            if !classifications.is_empty() {
+                eprint!("  classifications:\n{}", classifications.render());
             }
         }
         Outcome::Failed {
@@ -108,27 +85,98 @@ where
             seed,
             attempt,
             discarded,
-        } => panic!(
-            "[propcheck] {name} FAILED at case #{attempt} (PROPCHECK_SEED={seed}, {discarded} discarded)\n  \
-             reason:   {message}\n  \
-             original: {original:?}\n  \
-             shrunk:   {shrunk:?}"
-        ),
+            classifications,
+        } => {
+            let cpart = if classifications.is_empty() {
+                String::new()
+            } else {
+                format!("\n  classifications:\n{}", classifications.render())
+            };
+            panic!(
+                "[propcheck] {name} FAILED at case #{attempt} (PROPCHECK_SEED={seed}, {discarded} discarded)\n  \
+                 reason:   {message}\n  \
+                 original: {original:?}\n  \
+                 shrunk:   {shrunk:?}{cpart}"
+            );
+        }
         Outcome::Aborted {
             reason,
             cases,
             discarded,
             seed,
-        } => panic!(
-            "[propcheck] {name} ABORTED (seed={seed})\n  reason: {reason}\n  cases ran: {cases}, discarded: {discarded}"
-        ),
+            classifications,
+        } => {
+            let cpart = if classifications.is_empty() {
+                String::new()
+            } else {
+                format!("\n  classifications:\n{}", classifications.render())
+            };
+            panic!(
+                "[propcheck] {name} ABORTED (seed={seed})\n  reason: {reason}\n  cases ran: {cases}, discarded: {discarded}{cpart}"
+            );
+        }
+    }
+}
+
+fn run_strategy_loop<S, F>(strategy: &S, cfg: &Config, prop: &mut F) -> Outcome<S::Value>
+where
+    S: Strategy,
+    S::Value: Debug,
+    F: FnMut(&S::Value) -> PropResult,
+{
+    let mut rng = XorShift64::seed_from_u64(cfg.seed);
+    let target_cases = cfg.cases.max(1);
+    let mut passed = 0usize;
+    let mut discarded = 0usize;
+    let mut classifications = Classifications::default();
+
+    while passed < target_cases {
+        if discarded > cfg.max_discards {
+            return Outcome::Aborted {
+                reason: format!("too many discards: {discarded} (limit {})", cfg.max_discards),
+                cases: passed,
+                discarded,
+                seed: cfg.seed,
+                classifications,
+            };
+        }
+        let size = 1 + (passed * cfg.max_size / target_cases).min(cfg.max_size);
+        let val = strategy.new_value(&mut rng, size);
+        classify::reset_current();
+        let outcome = run_prop(prop, &val);
+        let labels = classify::take_current();
+        match outcome {
+            CaseOutcome::Pass => {
+                passed += 1;
+                classifications.merge_case(labels);
+            }
+            CaseOutcome::Discard => discarded += 1,
+            CaseOutcome::Fail(message) => {
+                classifications.merge_case(labels);
+                let shrunk = shrink_with_strategy(strategy, val.clone(), prop, cfg.max_shrinks);
+                return Outcome::Failed {
+                    original: val,
+                    shrunk,
+                    message,
+                    seed: cfg.seed,
+                    attempt: passed + 1,
+                    discarded,
+                    classifications,
+                };
+            }
+        }
+    }
+    Outcome::Passed {
+        cases: passed,
+        discarded,
+        classifications,
     }
 }
 
 fn shrink_with_strategy<S, F>(strategy: &S, initial: S::Value, prop: &mut F, max: usize) -> S::Value
 where
     S: Strategy,
-    F: FnMut(&S::Value) -> bool,
+    F: FnMut(&S::Value) -> PropResult,
 {
     let mut current = initial;
     let mut attempts = 0;
@@ -142,7 +190,10 @@ where
                 return current;
             }
             attempts += 1;
-            if matches!(run_prop(prop, &c), CaseOutcome::Fail(_)) {
+            classify::reset_current();
+            let r = run_prop(prop, &c);
+            let _ = classify::take_current();
+            if matches!(r, CaseOutcome::Fail(_)) {
                 current = c;
                 continue 'outer;
             }
@@ -186,6 +237,7 @@ mod tests {
             max_size: 50,
             max_discards: 1000,
             silence_panic_hook: false,
+            regression_replay: false,
         }
     }
 
