@@ -49,16 +49,23 @@ will be replayed automatically at the start of the next run.
 
 | Feature                                | Where it lives                                |
 |----------------------------------------|-----------------------------------------------|
-| `#[derive(Arbitrary)]`                 | `propcheck::Arbitrary` (macro namespace)      |
+| `#[derive(Arbitrary)]` (struct & enum) | `propcheck::Arbitrary` (macro namespace)      |
 | `#[propcheck]` attribute               | `propcheck::propcheck`                        |
 | `#[propcheck(cases = N, seed = N, ..)]`| Same, with `key = literal` args               |
-| `prop_assert!{,_eq,_ne}!`              | `propcheck::prop_assert*!`                    |
-| `prop_assume!`                         | `propcheck::prop_assume!`                     |
-| `classify!`                            | `propcheck::classify!`                        |
-| `IntoPropResult` (bool/`()`/`Result`)  | `propcheck::IntoPropResult`                   |
-| Regression auto-replay                 | On by default; toggle `Config::regression_replay` |
+| `#[propcheck] async fn ...`            | Uses built-in `block_on` — no runtime needed  |
+| `prop_assert!{,_eq,_ne,_matches}!`     | `propcheck::prop_assert*!`                    |
+| `prop_assume!` / `prop_skip!`          | Discard (bad input) vs skip (bad env)         |
+| `prop_with_context!`                   | Scoped context strings in failure messages    |
+| `classify!`                            | Per-case label distribution report            |
+| `IntoPropResult` (bool/`()`/`Result`)  | `?` operator + `Result<(), E>` in properties  |
+| `prop_oneof!` / `prop_compose!`        | Strategy combinator macros                    |
 | Strategy combinators                   | `propcheck::strategy::*`                      |
-| `prop_oneof![..]` / `prop_oneof![w => ..]` | `propcheck::prop_oneof!`                  |
+| String generators                      | `propcheck::strategy::str::*` (ascii, hex, …) |
+| State-machine testing                  | `propcheck::state_machine::run_state_machine` |
+| Differential testing                   | `propcheck::{differential, differential_with}`|
+| Greedy / Exhaustive shrink             | `Config::shrink_mode`                         |
+| Regression auto-replay                 | On by default; toggle `Config::regression_replay` |
+| Outcome accessors                      | `.is_passed()`, `.failure_message()`, `.shrunk()`, … |
 | Mutation byte fuzzer                   | `propcheck_fuzz::fuzz`                        |
 | Typed fuzzer (`Arbitrary`-driven)      | `propcheck_fuzz::fuzz_typed`                  |
 | Fuzz dictionary                        | `FuzzConfig::dictionary`                      |
@@ -243,6 +250,79 @@ for f in &report.failures {
 take eons to discover. `continue_after_crash` + `dedup_by_message` collect
 every unique panic. `crash_dir` saves a `.bin` reproducer and matching
 `.txt` metadata for each one.
+
+### 9. State-machine / model-based testing
+
+```rust
+use propcheck::state_machine::{run_state_machine, StateMachine};
+use propcheck::{Arbitrary, Config};
+
+#[derive(Arbitrary, Debug, Clone)]
+enum Op {
+    Push(u8),
+    Pop,
+    Clear,
+}
+
+struct VecModel;
+impl StateMachine for VecModel {
+    type State = (Vec<u8>, Vec<u8>); // (sut, reference)
+    type Operation = Op;
+    fn initial_state() -> Self::State { (Vec::new(), Vec::new()) }
+    fn execute(s: &mut Self::State, op: &Op) {
+        match op {
+            Op::Push(n) => { s.0.push(*n); s.1.push(*n); }
+            Op::Pop     => { s.0.pop();    s.1.pop(); }
+            Op::Clear   => { s.0.clear();  s.1.clear(); }
+        }
+    }
+    fn invariant(s: &Self::State) -> Result<(), String> {
+        if s.0 == s.1 { Ok(()) } else { Err(format!("{:?} != {:?}", s.0, s.1)) }
+    }
+}
+
+#[test]
+fn vec_matches_reference() {
+    run_state_machine::<VecModel>("vec model", Config::default());
+}
+```
+
+The runner generates sequences of operations, applies them in order, and
+checks the invariant after each step. Failing sequences are shrunk by
+greedy operation-removal until no more ops can be deleted while keeping
+the invariant violated.
+
+### 10. Async property tests
+
+```rust
+use propcheck::{propcheck, prop_assert_eq};
+
+#[propcheck]
+async fn http_parse_round_trips(req: Request) -> Result<(), Error> {
+    let bytes = req.encode().await;
+    let back = Request::decode(&bytes).await?;
+    prop_assert_eq!(back, req);
+    Ok(())
+}
+```
+
+The attribute macro detects `async fn` and drives the body with a built-in
+single-threaded executor (`propcheck::block_on`). No tokio / async-std
+dependency is introduced. Real I/O is not supported by the built-in
+executor; for tokio code, write a non-async wrapper that calls
+`tokio::runtime::Runtime::new()?.block_on(...)` instead.
+
+### 11. Differential testing
+
+```rust
+propcheck::differential(
+    "fast_sort matches slow_sort",
+    |v: &Vec<i32>| slow_sort(v),
+    |v: &Vec<i32>| fast_sort(v),
+);
+```
+
+On disagreement, both outputs and the shrunk input are reported.
 
 ## Reproducing a failure
 

@@ -23,6 +23,13 @@ use std::fmt::Debug;
 use std::marker::PhantomData;
 use std::ops::Range;
 
+/// String-generation strategies (`ascii_alphanumeric`, `hex_string`, ...).
+///
+/// See the [`strategy_str`](crate::strategy_str) module for the full list.
+pub mod str {
+    pub use crate::strategy_str::*;
+}
+
 /// A composable generator that knows how to produce and shrink values of
 /// type [`Strategy::Value`].
 pub trait Strategy {

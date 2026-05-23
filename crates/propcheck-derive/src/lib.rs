@@ -32,27 +32,48 @@ use proc_macro::{Delimiter, TokenStream, TokenTree};
 // #[derive(Arbitrary)]
 // ---------------------------------------------------------------------------
 
-/// Derives [`propcheck::Arbitrary`](https://docs.rs/propcheck) for a struct.
+/// Derives [`propcheck::Arbitrary`](https://docs.rs/propcheck) for a
+/// struct or enum.
 #[proc_macro_derive(Arbitrary)]
 pub fn derive_arbitrary(input: TokenStream) -> TokenStream {
-    match parse_struct(input) {
-        Ok(s) => generate_arbitrary_impl(&s),
+    match parse_input(input) {
+        Ok(ParsedItem::Struct(s)) => generate_arbitrary_impl(&s),
+        Ok(ParsedItem::Enum(e)) => generate_arbitrary_impl_enum(&e),
         Err(e) => compile_error(&e),
     }
 }
 
 #[derive(Debug)]
+enum ParsedItem {
+    Struct(ParsedStruct),
+    Enum(ParsedEnum),
+}
+
+#[derive(Debug)]
 struct ParsedStruct {
     name: String,
-    /// Generic parameter declarations as they appear inside `<...>`, e.g.
-    /// `T, U: Send`. Empty if the struct has no generics.
     generics_decl: String,
-    /// Generic parameter usage list, e.g. `T, U`. Lifetimes appear as
-    /// `'a`. Empty if the struct has no generics.
     generics_use: String,
-    /// Names of type parameters (no lifetimes, no const). Used to synthesize
-    /// the `T: Arbitrary` bounds.
     type_params: Vec<String>,
+    /// Tokens copied from the optional `where` clause, e.g. `T: Send`.
+    /// Empty if the struct had no where clause.
+    where_extra: String,
+    fields: Fields,
+}
+
+#[derive(Debug)]
+struct ParsedEnum {
+    name: String,
+    generics_decl: String,
+    generics_use: String,
+    type_params: Vec<String>,
+    where_extra: String,
+    variants: Vec<Variant>,
+}
+
+#[derive(Debug)]
+struct Variant {
+    name: String,
     fields: Fields,
 }
 
@@ -63,66 +84,156 @@ enum Fields {
     Unit,
 }
 
-fn parse_struct(input: TokenStream) -> Result<ParsedStruct, String> {
+fn parse_input(input: TokenStream) -> Result<ParsedItem, String> {
     let mut iter = input.into_iter().peekable();
-
-    // Skip attributes (`#[...]`) and visibility.
     skip_attrs_and_visibility(&mut iter);
 
-    // Expect `struct`.
-    match iter.next() {
-        Some(TokenTree::Ident(id)) if id.to_string() == "struct" => {}
+    let kind = match iter.next() {
+        Some(TokenTree::Ident(id)) => id.to_string(),
         Some(other) => {
             return Err(format!(
-                "expected `struct`, found `{}`",
+                "expected `struct` or `enum`, found `{}`",
                 tt_display(&other)
             ))
         }
-        None => return Err("expected `struct`".to_string()),
+        None => return Err("expected `struct` or `enum`".to_string()),
+    };
+    if kind != "struct" && kind != "enum" {
+        return Err(format!(
+            "#[derive(Arbitrary)] only supports `struct` and `enum`, got `{kind}`"
+        ));
     }
-
-    // Struct name.
     let name = match iter.next() {
         Some(TokenTree::Ident(id)) => id.to_string(),
         Some(other) => return Err(format!("expected identifier, found `{}`", tt_display(&other))),
-        None => return Err("expected struct name".to_string()),
+        None => return Err("expected type name".to_string()),
     };
-
-    // Optional generics: `<T, U: Bound>`.
     let (generics_decl, generics_use, type_params) = parse_generics(&mut iter)?;
+    let where_extra = parse_optional_where(&mut iter)?;
 
-    // Optional where clause: not supported — fall through to disallow.
-    if let Some(TokenTree::Ident(id)) = iter.peek() {
-        if id.to_string() == "where" {
-            return Err("`where` clauses are not supported by #[derive(Arbitrary)]; write the impl by hand".to_string());
+    if kind == "struct" {
+        let fields = match iter.next() {
+            Some(TokenTree::Group(g)) if g.delimiter() == Delimiter::Brace => {
+                Fields::Named(parse_named_fields(g.stream())?)
+            }
+            Some(TokenTree::Group(g)) if g.delimiter() == Delimiter::Parenthesis => {
+                Fields::Unnamed(parse_tuple_fields(g.stream())?)
+            }
+            Some(TokenTree::Punct(p)) if p.as_char() == ';' => Fields::Unit,
+            Some(other) => {
+                return Err(format!(
+                    "expected struct body or `;`, found `{}`",
+                    tt_display(&other)
+                ))
+            }
+            None => return Err("expected struct body".to_string()),
+        };
+        Ok(ParsedItem::Struct(ParsedStruct {
+            name,
+            generics_decl,
+            generics_use,
+            type_params,
+            where_extra,
+            fields,
+        }))
+    } else {
+        // enum
+        let body = match iter.next() {
+            Some(TokenTree::Group(g)) if g.delimiter() == Delimiter::Brace => g.stream(),
+            Some(other) => {
+                return Err(format!(
+                    "expected enum body `{{ ... }}`, found `{}`",
+                    tt_display(&other)
+                ))
+            }
+            None => return Err("expected enum body".to_string()),
+        };
+        let variants = parse_enum_variants(body)?;
+        if variants.is_empty() {
+            return Err(
+                "#[derive(Arbitrary)] needs at least one variant on an enum".to_string()
+            );
+        }
+        Ok(ParsedItem::Enum(ParsedEnum {
+            name,
+            generics_decl,
+            generics_use,
+            type_params,
+            where_extra,
+            variants,
+        }))
+    }
+}
+
+/// Consumes an optional `where C1: T1, C2: T2` clause and returns its
+/// tokens stringified (excluding the `where` keyword and any trailing
+/// `{` / `;`).
+fn parse_optional_where(
+    iter: &mut std::iter::Peekable<proc_macro::token_stream::IntoIter>,
+) -> Result<String, String> {
+    if !matches!(iter.peek(), Some(TokenTree::Ident(id)) if id.to_string() == "where") {
+        return Ok(String::new());
+    }
+    iter.next(); // consume `where`
+    let mut tokens: Vec<TokenTree> = Vec::new();
+    while let Some(t) = iter.peek() {
+        match t {
+            TokenTree::Group(g)
+                if g.delimiter() == Delimiter::Brace
+                    || g.delimiter() == Delimiter::Parenthesis =>
+            {
+                break;
+            }
+            TokenTree::Punct(p) if p.as_char() == ';' => break,
+            _ => tokens.push(iter.next().unwrap()),
         }
     }
+    Ok(stream_to_string(tokens.into_iter().collect()))
+}
 
-    // Body: braces, parens, or semicolon.
-    let fields = match iter.next() {
-        Some(TokenTree::Group(g)) if g.delimiter() == Delimiter::Brace => {
-            Fields::Named(parse_named_fields(g.stream())?)
+fn parse_enum_variants(stream: TokenStream) -> Result<Vec<Variant>, String> {
+    let mut iter = stream.into_iter().peekable();
+    let mut out: Vec<Variant> = Vec::new();
+    while iter.peek().is_some() {
+        skip_attrs_and_visibility(&mut iter);
+        let name = match iter.peek() {
+            Some(TokenTree::Ident(_)) => match iter.next().unwrap() {
+                TokenTree::Ident(id) => id.to_string(),
+                _ => unreachable!(),
+            },
+            None => break,
+            Some(other) => {
+                return Err(format!(
+                    "expected variant name, found `{}`",
+                    tt_display(other)
+                ))
+            }
+        };
+        // After variant name: optional `(...)`, `{...}`, or directly `,`/end.
+        let fields = match iter.peek() {
+            Some(TokenTree::Group(g)) if g.delimiter() == Delimiter::Parenthesis => {
+                let g = match iter.next().unwrap() {
+                    TokenTree::Group(g) => g,
+                    _ => unreachable!(),
+                };
+                Fields::Unnamed(parse_tuple_fields(g.stream())?)
+            }
+            Some(TokenTree::Group(g)) if g.delimiter() == Delimiter::Brace => {
+                let g = match iter.next().unwrap() {
+                    TokenTree::Group(g) => g,
+                    _ => unreachable!(),
+                };
+                Fields::Named(parse_named_fields(g.stream())?)
+            }
+            _ => Fields::Unit,
+        };
+        out.push(Variant { name, fields });
+        // Consume optional trailing comma.
+        if matches!(iter.peek(), Some(TokenTree::Punct(p)) if p.as_char() == ',') {
+            iter.next();
         }
-        Some(TokenTree::Group(g)) if g.delimiter() == Delimiter::Parenthesis => {
-            Fields::Unnamed(parse_tuple_fields(g.stream())?)
-        }
-        Some(TokenTree::Punct(p)) if p.as_char() == ';' => Fields::Unit,
-        Some(other) => {
-            return Err(format!(
-                "expected struct body or `;`, found `{}`",
-                tt_display(&other)
-            ))
-        }
-        None => return Err("expected struct body".to_string()),
-    };
-
-    Ok(ParsedStruct {
-        name,
-        generics_decl,
-        generics_use,
-        type_params,
-        fields,
-    })
+    }
+    Ok(out)
 }
 
 fn skip_attrs_and_visibility(iter: &mut std::iter::Peekable<proc_macro::token_stream::IntoIter>) {
@@ -314,16 +425,20 @@ fn collect_until_top_comma(
 }
 
 fn generate_arbitrary_impl(s: &ParsedStruct) -> TokenStream {
-    // Build extra bounds: each type param must be Arbitrary.
-    let extra_bounds_pieces: Vec<String> = s
+    // Build the where clause: each type param needs Arbitrary, plus the
+    // user's own where tokens if any.
+    let mut where_pieces: Vec<String> = s
         .type_params
         .iter()
         .map(|p| format!("{p}: ::propcheck::Arbitrary"))
         .collect();
-    let where_clause = if extra_bounds_pieces.is_empty() {
+    if !s.where_extra.is_empty() {
+        where_pieces.push(s.where_extra.clone());
+    }
+    let where_clause = if where_pieces.is_empty() {
         String::new()
     } else {
-        format!("where {}", extra_bounds_pieces.join(", "))
+        format!("where {}", where_pieces.join(", "))
     };
 
     let generics_decl = if s.generics_decl.is_empty() {
@@ -437,6 +552,180 @@ fn generate_arbitrary_impl(s: &ParsedStruct) -> TokenStream {
     })
 }
 
+// --- enum codegen ------------------------------------------------------
+
+fn generate_arbitrary_impl_enum(e: &ParsedEnum) -> TokenStream {
+    let mut where_pieces: Vec<String> = e
+        .type_params
+        .iter()
+        .map(|p| format!("{p}: ::propcheck::Arbitrary"))
+        .collect();
+    if !e.where_extra.is_empty() {
+        where_pieces.push(e.where_extra.clone());
+    }
+    let where_clause = if where_pieces.is_empty() {
+        String::new()
+    } else {
+        format!("where {}", where_pieces.join(", "))
+    };
+
+    let generics_decl = if e.generics_decl.is_empty() {
+        String::new()
+    } else {
+        format!("<{}>", e.generics_decl)
+    };
+    let generics_use = if e.generics_use.is_empty() {
+        String::new()
+    } else {
+        format!("<{}>", e.generics_use)
+    };
+
+    let name = &e.name;
+    let self_ty = format!("{name}{generics_use}");
+    let n_variants = e.variants.len();
+
+    // Find the simplest variant (preferring unit, then smallest arity).
+    // Used as the "collapse" target during shrinking.
+    let simplest_idx = e
+        .variants
+        .iter()
+        .enumerate()
+        .min_by_key(|(_, v)| match &v.fields {
+            Fields::Unit => 0usize,
+            Fields::Named(fs) => 1 + fs.len() * 2,
+            Fields::Unnamed(fs) => 1 + fs.len() * 2,
+        })
+        .map(|(i, _)| i)
+        .unwrap_or(0);
+
+    // --- arbitrary(): pick a variant uniformly, fill its fields ---
+    let mut arms_gen = String::new();
+    for (i, v) in e.variants.iter().enumerate() {
+        let vname = &v.name;
+        let body = match &v.fields {
+            Fields::Unit => format!("{name}::{vname}"),
+            Fields::Unnamed(fs) => {
+                let args: Vec<String> = (0..fs.len())
+                    .map(|_| {
+                        "<_ as ::propcheck::Arbitrary>::arbitrary(rng, size)".to_string()
+                    })
+                    .collect();
+                format!("{name}::{vname}({})", args.join(", "))
+            }
+            Fields::Named(fs) => {
+                let inits: Vec<String> = fs
+                    .iter()
+                    .map(|(fname, _)| {
+                        format!(
+                            "{fname}: <_ as ::propcheck::Arbitrary>::arbitrary(rng, size)"
+                        )
+                    })
+                    .collect();
+                format!("{name}::{vname} {{ {} }}", inits.join(", "))
+            }
+        };
+        arms_gen.push_str(&format!("            {i}u64 => {body},\n"));
+    }
+
+    // --- shrink(): per-variant field shrinks + optional collapse ---
+    let mut arms_shrink = String::new();
+    for v in e.variants.iter() {
+        let vname = &v.name;
+        let (pat, body) = match &v.fields {
+            Fields::Unit => (
+                format!("{name}::{vname}"),
+                String::from("/* no shrinks for a unit variant */"),
+            ),
+            Fields::Unnamed(fs) => {
+                // Pattern: Self::Vname(__f0, __f1, ...)
+                let pat_args: Vec<String> = (0..fs.len()).map(|i| format!("__f{i}")).collect();
+                let pat = format!("{name}::{vname}({})", pat_args.join(", "));
+                let mut body = String::new();
+                for shrink_idx in 0..fs.len() {
+                    let mut ctor_args = String::new();
+                    for j in 0..fs.len() {
+                        if j > 0 {
+                            ctor_args.push_str(", ");
+                        }
+                        if j == shrink_idx {
+                            ctor_args.push_str("__s");
+                        } else {
+                            ctor_args
+                                .push_str(&format!("::std::clone::Clone::clone(__f{j})"));
+                        }
+                    }
+                    body.push_str(&format!(
+                        "for __s in ::propcheck::Arbitrary::shrink(__f{shrink_idx}) {{\n            __out.push({name}::{vname}({ctor_args}));\n        }}\n"
+                    ));
+                }
+                (pat, body)
+            }
+            Fields::Named(fs) => {
+                // Pattern: Self::Vname { f0, f1, ... }
+                let pat_args: Vec<String> =
+                    fs.iter().map(|(n, _)| n.clone()).collect();
+                let pat = format!("{name}::{vname} {{ {} }}", pat_args.join(", "));
+                let mut body = String::new();
+                for (shrink_idx, (sname, _)) in fs.iter().enumerate() {
+                    let mut ctor_args = String::new();
+                    for (j, (jname, _)) in fs.iter().enumerate() {
+                        if j > 0 {
+                            ctor_args.push_str(", ");
+                        }
+                        if j == shrink_idx {
+                            ctor_args.push_str(&format!("{jname}: __s"));
+                        } else {
+                            ctor_args.push_str(&format!(
+                                "{jname}: ::std::clone::Clone::clone({jname})"
+                            ));
+                        }
+                    }
+                    body.push_str(&format!(
+                        "for __s in ::propcheck::Arbitrary::shrink({sname}) {{\n            __out.push({name}::{vname} {{ {ctor_args} }});\n        }}\n"
+                    ));
+                }
+                (pat, body)
+            }
+        };
+        arms_shrink.push_str(&format!("        {pat} => {{\n            {body}        }}\n"));
+    }
+
+    // Collapse to simplest variant (only if it is a unit variant and the
+    // current is not already that variant).
+    let collapse = if matches!(e.variants[simplest_idx].fields, Fields::Unit) {
+        let target = &e.variants[simplest_idx].name;
+        format!(
+            "match self {{\n            {name}::{target} => {{}}\n            _ => __out.push({name}::{target}),\n        }}\n"
+        )
+    } else {
+        String::new()
+    };
+
+    let code = format!(
+        "impl{generics_decl} ::propcheck::Arbitrary for {self_ty} {where_clause} {{
+            fn arbitrary<__R: ::propcheck::Rng + ?Sized>(rng: &mut __R, size: usize) -> Self {{
+                let __pick = ::propcheck::Rng::gen_range_u64(rng, 0, {n_variants}u64);
+                match __pick {{
+{arms_gen}                    _ => unreachable!(),
+                }}
+            }}
+            fn shrink(&self) -> ::std::boxed::Box<dyn ::std::iter::Iterator<Item = Self> + '_> {{
+                let mut __out: ::std::vec::Vec<Self> = ::std::vec::Vec::new();
+                {collapse}
+                match self {{
+{arms_shrink}                }}
+                ::std::boxed::Box::new(__out.into_iter())
+            }}
+        }}",
+    );
+
+    code.parse().unwrap_or_else(|err| {
+        compile_error(&format!(
+            "internal error: generated enum code failed to parse: {err}\n--- generated ---\n{code}"
+        ))
+    })
+}
+
 // ---------------------------------------------------------------------------
 // #[propcheck]
 // ---------------------------------------------------------------------------
@@ -449,6 +738,7 @@ fn generate_arbitrary_impl(s: &ParsedStruct) -> TokenStream {
 /// - `max_shrinks = N`   — shrink-step budget
 /// - `max_size = N`      — generator size cap
 /// - `max_discards = N`  — discard budget before abort
+/// - `max_skips = N`     — skip budget before abort
 #[proc_macro_attribute]
 pub fn propcheck(attr: TokenStream, item: TokenStream) -> TokenStream {
     let args = match parse_attr_args(attr) {
@@ -468,6 +758,7 @@ struct AttrArgs {
     max_shrinks: Option<u64>,
     max_size: Option<u64>,
     max_discards: Option<u64>,
+    max_skips: Option<u64>,
 }
 
 impl AttrArgs {
@@ -477,6 +768,7 @@ impl AttrArgs {
             || self.max_shrinks.is_some()
             || self.max_size.is_some()
             || self.max_discards.is_some()
+            || self.max_skips.is_some()
     }
 }
 
@@ -512,6 +804,7 @@ fn parse_attr_args(attr: TokenStream) -> Result<AttrArgs, String> {
             "max_shrinks" => args.max_shrinks = Some(value),
             "max_size" => args.max_size = Some(value),
             "max_discards" => args.max_discards = Some(value),
+            "max_skips" => args.max_skips = Some(value),
             other => return Err(format!("unknown #[propcheck] argument: `{other}`")),
         }
         if matches!(iter.peek(), Some(TokenTree::Punct(p)) if p.as_char() == ',') {
@@ -529,17 +822,22 @@ struct ParsedFn {
     /// Empty string means no return type was declared.
     return_type: String,
     body: String,
+    /// `true` if the function was declared `async fn`.
+    is_async: bool,
 }
 
 fn parse_fn(input: TokenStream) -> Result<ParsedFn, String> {
     let mut iter = input.into_iter().peekable();
     skip_attrs_and_visibility(&mut iter);
-    // Skip `async`, `unsafe`, `extern "C"` ... none of these make sense for a
-    // property test, so just consume any modifier idents before `fn`.
+    let mut is_async = false;
+    // Skip / record modifiers before `fn`.
     while let Some(TokenTree::Ident(id)) = iter.peek() {
         let s = id.to_string();
         if s == "fn" {
             break;
+        }
+        if s == "async" {
+            is_async = true;
         }
         iter.next();
         if s == "extern" {
@@ -596,6 +894,7 @@ fn parse_fn(input: TokenStream) -> Result<ParsedFn, String> {
         params,
         return_type,
         body: body_group.stream().to_string(),
+        is_async,
     })
 }
 
@@ -640,15 +939,36 @@ fn generate_test_wrapper(f: &ParsedFn, args: &AttrArgs) -> TokenStream {
         format!(" -> {}", f.return_type)
     };
 
-    let inner_closure = format!(
-        "|{arg_pattern}: &{arg_type}| {{
-            {destructure}
-            let __body = || {body_ret} {{
-                {body}
-            }};
-            ::propcheck::IntoPropResult::into_prop_result(__body())
-        }}"
-    );
+    // For async fn, wrap the body in `async move { ... }` and drive it
+    // through propcheck's minimal block_on. Async block return types are
+    // inferred — if the user needs a Result<(), E> body, the type comes
+    // from the trailing `Ok(())` and any `?` propagations.
+    let inner_closure = if f.is_async {
+        let out_ty = if f.return_type.is_empty() {
+            "_".to_string()
+        } else {
+            f.return_type.clone()
+        };
+        format!(
+            "|{arg_pattern}: &{arg_type}| {{
+                {destructure}
+                let __out: {out_ty} = ::propcheck::block_on(async move {{
+                    {body}
+                }});
+                ::propcheck::IntoPropResult::into_prop_result(__out)
+            }}"
+        )
+    } else {
+        format!(
+            "|{arg_pattern}: &{arg_type}| {{
+                {destructure}
+                let __body = || {body_ret} {{
+                    {body}
+                }};
+                ::propcheck::IntoPropResult::into_prop_result(__body())
+            }}"
+        )
+    };
 
     // Choose entry point: `run` for default config, `run_with` when any
     // attribute argument is set.
@@ -668,6 +988,9 @@ fn generate_test_wrapper(f: &ParsedFn, args: &AttrArgs) -> TokenStream {
         }
         if let Some(v) = args.max_discards {
             overrides.push_str(&format!("            max_discards: {v}usize,\n"));
+        }
+        if let Some(v) = args.max_skips {
+            overrides.push_str(&format!("            max_skips: {v}usize,\n"));
         }
         format!(
             "::propcheck::run_with::<{arg_type}, _, _>(

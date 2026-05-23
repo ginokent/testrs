@@ -37,18 +37,28 @@ use std::panic::{self, AssertUnwindSafe};
 pub use propcheck_core::{Arbitrary, Rng, XorShift64};
 
 mod assert;
+mod async_exec;
 pub mod classify;
+pub mod differential;
 mod panic_hook;
 mod regression;
+pub mod state_machine;
 pub mod strategy_runner;
 
-pub use assert::{PropAssertFailure, PropDiscard};
+pub use async_exec::block_on;
+pub use differential::{differential, differential_with};
+
+pub use assert::{PropAssertFailure, PropDiscard, PropSkip};
+#[doc(hidden)]
+pub use assert::{__current_context, __pop_context, __push_context};
 pub use classify::Classifications;
 pub use propcheck_core::strategy;
 // `Arbitrary` as both the trait (from propcheck-core, type namespace) and the
 // derive macro (from propcheck-derive, macro namespace).
 pub use propcheck_derive::{propcheck, Arbitrary};
 pub use strategy_runner::{forall_strategy, forall_strategy_with, run_strategy, run_strategy_with};
+#[doc(hidden)]
+pub use strategy_runner::__ComposedStrategy;
 
 use panic_hook::SilentPanicHook;
 
@@ -120,9 +130,13 @@ pub struct Config {
     pub max_shrinks: usize,
     /// Upper bound on the size hint passed to `Arbitrary::arbitrary`.
     pub max_size: usize,
-    /// Maximum total discards allowed before the run is aborted. Defaults
-    /// to `cases * 10` — i.e. up to ten discards per kept case.
+    /// Maximum total `prop_assume!` discards allowed before the run is
+    /// aborted. Defaults to `cases * 10`.
     pub max_discards: usize,
+    /// Maximum total `prop_skip!` skips allowed before the run is aborted.
+    /// Counted separately from discards so a flaky environment doesn't
+    /// look like a noisy generator. Defaults to `cases * 10`.
+    pub max_skips: usize,
     /// If `true`, the global panic hook is silenced while the run executes
     /// so failing cases don't spam the terminal. Refcounted internally so
     /// concurrent runners share a single hook installation.
@@ -131,6 +145,23 @@ pub struct Config {
     /// `target/propcheck-regressions/<name>.txt` and replay them at the
     /// start of subsequent runs.
     pub regression_replay: bool,
+    /// Shrinking strategy. Defaults to [`ShrinkMode::Greedy`] — accept the
+    /// first failing candidate at each step. [`ShrinkMode::Exhaustive`]
+    /// evaluates every candidate and accepts only the smallest failing
+    /// one (by `Debug` length as a cheap heuristic), at higher cost.
+    pub shrink_mode: ShrinkMode,
+}
+
+/// How the shrinker explores candidates.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ShrinkMode {
+    /// Accept the first candidate that still fails (faster, typical
+    /// QuickCheck behavior).
+    Greedy,
+    /// At each step, evaluate every candidate and accept the smallest
+    /// (by `Debug` representation length) that still fails. Slower but
+    /// often produces tighter counterexamples for nested data.
+    Exhaustive,
 }
 
 impl Default for Config {
@@ -142,8 +173,10 @@ impl Default for Config {
             max_shrinks: 1024,
             max_size: 100,
             max_discards: cases * 10,
+            max_skips: cases * 10,
             silence_panic_hook: true,
             regression_replay: true,
+            shrink_mode: ShrinkMode::Greedy,
         }
     }
 }
@@ -164,10 +197,11 @@ fn env_seed() -> u64 {
 /// Outcome of a property test.
 #[derive(Debug)]
 pub enum Outcome<A> {
-    /// All required cases passed (possibly after some discards).
+    /// All required cases passed (possibly after some discards or skips).
     Passed {
         cases: usize,
         discarded: usize,
+        skipped: usize,
         classifications: Classifications,
     },
     /// A case failed.
@@ -178,16 +212,110 @@ pub enum Outcome<A> {
         seed: u64,
         attempt: usize,
         discarded: usize,
+        skipped: usize,
         classifications: Classifications,
     },
-    /// Run aborted before completion (e.g. too many discards).
+    /// Run aborted before completion (too many discards or skips).
     Aborted {
         reason: String,
         cases: usize,
         discarded: usize,
+        skipped: usize,
         seed: u64,
         classifications: Classifications,
     },
+}
+
+impl<A> Outcome<A> {
+    /// `true` if the run completed without finding a failure.
+    pub fn is_passed(&self) -> bool {
+        matches!(self, Outcome::Passed { .. })
+    }
+
+    /// `true` if the run found a failing case.
+    pub fn is_failed(&self) -> bool {
+        matches!(self, Outcome::Failed { .. })
+    }
+
+    /// `true` if the run was aborted before completion.
+    pub fn is_aborted(&self) -> bool {
+        matches!(self, Outcome::Aborted { .. })
+    }
+
+    /// The failure message, if any.
+    pub fn failure_message(&self) -> Option<&str> {
+        match self {
+            Outcome::Failed { message, .. } => Some(message),
+            _ => None,
+        }
+    }
+
+    /// The minimized counterexample, if any.
+    pub fn shrunk(&self) -> Option<&A> {
+        match self {
+            Outcome::Failed { shrunk, .. } => Some(shrunk),
+            _ => None,
+        }
+    }
+
+    /// The original (unshrunk) failing input, if any.
+    pub fn original(&self) -> Option<&A> {
+        match self {
+            Outcome::Failed { original, .. } => Some(original),
+            _ => None,
+        }
+    }
+
+    /// Number of cases that ran the property to completion successfully.
+    /// For a failed run, this is the index of the failing case minus one.
+    pub fn cases(&self) -> usize {
+        match self {
+            Outcome::Passed { cases, .. } => *cases,
+            Outcome::Failed { attempt, .. } => attempt.saturating_sub(1),
+            Outcome::Aborted { cases, .. } => *cases,
+        }
+    }
+
+    /// Number of `prop_assume!` discards encountered.
+    pub fn discarded(&self) -> usize {
+        match self {
+            Outcome::Passed { discarded, .. }
+            | Outcome::Failed { discarded, .. }
+            | Outcome::Aborted { discarded, .. } => *discarded,
+        }
+    }
+
+    /// Number of `prop_skip!` skips encountered.
+    pub fn skipped(&self) -> usize {
+        match self {
+            Outcome::Passed { skipped, .. }
+            | Outcome::Failed { skipped, .. }
+            | Outcome::Aborted { skipped, .. } => *skipped,
+        }
+    }
+
+    /// Seed used for the run.
+    pub fn seed(&self) -> Option<u64> {
+        match self {
+            Outcome::Failed { seed, .. } | Outcome::Aborted { seed, .. } => Some(*seed),
+            Outcome::Passed { .. } => None,
+        }
+    }
+
+    /// Aggregated `classify!` labels collected during the run.
+    pub fn classifications(&self) -> &Classifications {
+        match self {
+            Outcome::Passed {
+                classifications, ..
+            }
+            | Outcome::Failed {
+                classifications, ..
+            }
+            | Outcome::Aborted {
+                classifications, ..
+            } => classifications,
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -269,14 +397,17 @@ where
         Outcome::Passed {
             cases,
             discarded,
+            skipped,
             classifications,
         } => {
-            let discard_part = if discarded == 0 {
-                String::new()
-            } else {
-                format!(", {discarded} discarded")
-            };
-            eprintln!("[propcheck] {name}: ok ({cases} cases{discard_part}, seed={seed})");
+            let mut extra = String::new();
+            if discarded > 0 {
+                extra.push_str(&format!(", {discarded} discarded"));
+            }
+            if skipped > 0 {
+                extra.push_str(&format!(", {skipped} skipped"));
+            }
+            eprintln!("[propcheck] {name}: ok ({cases} cases{extra}, seed={seed})");
             if !classifications.is_empty() {
                 eprint!("  classifications:\n{}", classifications.render());
             }
@@ -288,6 +419,7 @@ where
             seed,
             attempt,
             discarded,
+            skipped,
             classifications,
         } => {
             let class_part = if classifications.is_empty() {
@@ -296,7 +428,7 @@ where
                 format!("\n  classifications:\n{}", classifications.render())
             };
             panic!(
-                "[propcheck] {name} FAILED at case #{attempt} (PROPCHECK_SEED={seed}, {discarded} discarded)\n  \
+                "[propcheck] {name} FAILED at case #{attempt} (PROPCHECK_SEED={seed}, {discarded} discarded, {skipped} skipped)\n  \
                  reason:   {message}\n  \
                  original: {original:?}\n  \
                  shrunk:   {shrunk:?}{class_part}",
@@ -306,6 +438,7 @@ where
             reason,
             cases,
             discarded,
+            skipped,
             seed,
             classifications,
         } => {
@@ -317,7 +450,7 @@ where
             panic!(
                 "[propcheck] {name} ABORTED (seed={seed})\n  \
                  reason: {reason}\n  \
-                 cases ran: {cases}, discarded: {discarded}{class_part}",
+                 cases ran: {cases}, discarded: {discarded}, skipped: {skipped}{class_part}",
             );
         }
     }
@@ -340,7 +473,8 @@ where
         classify::reset_current();
         if let CaseOutcome::Fail(msg) = run_prop(prop, &val) {
             let _labels = classify::take_current();
-            let shrunk = shrink_failure(val.clone(), prop, cfg.max_shrinks);
+            let shrunk =
+                shrink_failure_with_mode(val.clone(), prop, cfg.max_shrinks, cfg.shrink_mode);
             return Outcome::Failed {
                 original: val,
                 shrunk,
@@ -348,6 +482,7 @@ where
                 seed: rseed,
                 attempt: 0,
                 discarded: 0,
+                skipped: 0,
                 classifications: Classifications::default(),
             };
         }
@@ -359,17 +494,34 @@ where
     let target_cases = cfg.cases.max(1);
     let mut passed = 0usize;
     let mut discarded = 0usize;
+    let mut skipped = 0usize;
     let mut classifications = Classifications::default();
 
     while passed < target_cases {
         if discarded > cfg.max_discards {
             return Outcome::Aborted {
                 reason: format!(
-                    "too many discards: {discarded} (limit {max}) before {target_cases} cases completed",
+                    "too many discards: {discarded} (limit {max}) — your prop_assume! \
+                     preconditions reject too many generated cases. Tighten the generator.",
                     max = cfg.max_discards
                 ),
                 cases: passed,
                 discarded,
+                skipped,
+                seed: cfg.seed,
+                classifications,
+            };
+        }
+        if skipped > cfg.max_skips {
+            return Outcome::Aborted {
+                reason: format!(
+                    "too many skips: {skipped} (limit {max}) — the test environment is \
+                     not providing required preconditions. Check prop_skip! call sites.",
+                    max = cfg.max_skips
+                ),
+                cases: passed,
+                discarded,
+                skipped,
                 seed: cfg.seed,
                 classifications,
             };
@@ -387,9 +539,13 @@ where
             CaseOutcome::Discard => {
                 discarded += 1;
             }
+            CaseOutcome::Skip(_) => {
+                skipped += 1;
+            }
             CaseOutcome::Fail(message) => {
                 classifications.merge_case(labels);
-                let shrunk = shrink_failure(val.clone(), prop, cfg.max_shrinks);
+                let shrunk =
+                shrink_failure_with_mode(val.clone(), prop, cfg.max_shrinks, cfg.shrink_mode);
                 return Outcome::Failed {
                     original: val,
                     shrunk,
@@ -397,6 +553,7 @@ where
                     seed: cfg.seed,
                     attempt: passed + 1,
                     discarded,
+                    skipped,
                     classifications,
                 };
             }
@@ -405,15 +562,18 @@ where
     Outcome::Passed {
         cases: passed,
         discarded,
+        skipped,
         classifications,
     }
 }
 
 /// Result of running the property on one case.
+#[allow(dead_code)] // `Skip`'s message is informational; surfaced through skip count.
 pub(crate) enum CaseOutcome {
     Pass,
     Fail(String),
     Discard,
+    Skip(String),
 }
 
 pub(crate) fn run_prop<A, F>(prop: &mut F, val: &A) -> CaseOutcome
@@ -432,6 +592,9 @@ pub(crate) fn classify_panic(payload: &Box<dyn Any + Send>) -> CaseOutcome {
     if payload.downcast_ref::<PropDiscard>().is_some() {
         return CaseOutcome::Discard;
     }
+    if let Some(s) = payload.downcast_ref::<PropSkip>() {
+        return CaseOutcome::Skip(s.message.clone());
+    }
     if let Some(f) = payload.downcast_ref::<PropAssertFailure>() {
         return CaseOutcome::Fail(f.message.clone());
     }
@@ -444,7 +607,7 @@ pub(crate) fn classify_panic(payload: &Box<dyn Any + Send>) -> CaseOutcome {
     CaseOutcome::Fail("<non-string panic payload>".to_string())
 }
 
-fn shrink_failure<A, F>(initial: A, prop: &mut F, max: usize) -> A
+fn shrink_failure_with_mode<A, F>(initial: A, prop: &mut F, max: usize, mode: ShrinkMode) -> A
 where
     A: Arbitrary,
     F: FnMut(&A) -> PropResult,
@@ -456,22 +619,51 @@ where
         if candidates.is_empty() {
             return current;
         }
-        for c in candidates {
-            if attempts >= max {
+        match mode {
+            ShrinkMode::Greedy => {
+                for c in candidates {
+                    if attempts >= max {
+                        return current;
+                    }
+                    attempts += 1;
+                    classify::reset_current();
+                    let r = run_prop(prop, &c);
+                    let _ = classify::take_current();
+                    if matches!(r, CaseOutcome::Fail(_)) {
+                        current = c;
+                        continue 'outer;
+                    }
+                }
                 return current;
             }
-            attempts += 1;
-            // Discard during shrinking counts as "pass" — we can't minimize
-            // toward a value the property never sees.
-            classify::reset_current();
-            let r = run_prop(prop, &c);
-            let _ = classify::take_current();
-            if matches!(r, CaseOutcome::Fail(_)) {
-                current = c;
-                continue 'outer;
+            ShrinkMode::Exhaustive => {
+                // Evaluate every candidate (up to budget); keep the
+                // smallest-by-Debug-length failing one.
+                let mut best: Option<(usize, A)> = None;
+                for c in candidates {
+                    if attempts >= max {
+                        break;
+                    }
+                    attempts += 1;
+                    classify::reset_current();
+                    let r = run_prop(prop, &c);
+                    let _ = classify::take_current();
+                    if matches!(r, CaseOutcome::Fail(_)) {
+                        let len = format!("{c:?}").len();
+                        if best.as_ref().map(|(b, _)| len < *b).unwrap_or(true) {
+                            best = Some((len, c));
+                        }
+                    }
+                }
+                match best {
+                    Some((_, c)) => {
+                        current = c;
+                        continue 'outer;
+                    }
+                    None => return current,
+                }
             }
         }
-        return current;
     }
 }
 
@@ -486,8 +678,10 @@ mod tests {
             max_shrinks: 512,
             max_size: 50,
             max_discards: 5000,
+            max_skips: 5000,
             silence_panic_hook: false,
             regression_replay: false,
+            shrink_mode: ShrinkMode::Greedy,
         }
     }
 
@@ -613,6 +807,8 @@ mod tests {
         let cfg = Config {
             cases: 100,
             max_discards: 50,
+            max_skips: 5000,
+            shrink_mode: ShrinkMode::Greedy,
             ..cfg(19)
         };
         let outcome = forall_with(cfg, |_: &i32| {

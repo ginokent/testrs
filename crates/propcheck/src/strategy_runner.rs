@@ -66,14 +66,17 @@ where
         Outcome::Passed {
             cases,
             discarded,
+            skipped,
             classifications,
         } => {
-            let dpart = if discarded == 0 {
-                String::new()
-            } else {
-                format!(", {discarded} discarded")
-            };
-            eprintln!("[propcheck] {name}: ok ({cases} cases{dpart}, seed={seed})");
+            let mut extra = String::new();
+            if discarded > 0 {
+                extra.push_str(&format!(", {discarded} discarded"));
+            }
+            if skipped > 0 {
+                extra.push_str(&format!(", {skipped} skipped"));
+            }
+            eprintln!("[propcheck] {name}: ok ({cases} cases{extra}, seed={seed})");
             if !classifications.is_empty() {
                 eprint!("  classifications:\n{}", classifications.render());
             }
@@ -85,6 +88,7 @@ where
             seed,
             attempt,
             discarded,
+            skipped,
             classifications,
         } => {
             let cpart = if classifications.is_empty() {
@@ -93,7 +97,7 @@ where
                 format!("\n  classifications:\n{}", classifications.render())
             };
             panic!(
-                "[propcheck] {name} FAILED at case #{attempt} (PROPCHECK_SEED={seed}, {discarded} discarded)\n  \
+                "[propcheck] {name} FAILED at case #{attempt} (PROPCHECK_SEED={seed}, {discarded} discarded, {skipped} skipped)\n  \
                  reason:   {message}\n  \
                  original: {original:?}\n  \
                  shrunk:   {shrunk:?}{cpart}"
@@ -103,6 +107,7 @@ where
             reason,
             cases,
             discarded,
+            skipped,
             seed,
             classifications,
         } => {
@@ -112,7 +117,7 @@ where
                 format!("\n  classifications:\n{}", classifications.render())
             };
             panic!(
-                "[propcheck] {name} ABORTED (seed={seed})\n  reason: {reason}\n  cases ran: {cases}, discarded: {discarded}{cpart}"
+                "[propcheck] {name} ABORTED (seed={seed})\n  reason: {reason}\n  cases ran: {cases}, discarded: {discarded}, skipped: {skipped}{cpart}"
             );
         }
     }
@@ -128,6 +133,7 @@ where
     let target_cases = cfg.cases.max(1);
     let mut passed = 0usize;
     let mut discarded = 0usize;
+    let mut skipped = 0usize;
     let mut classifications = Classifications::default();
 
     while passed < target_cases {
@@ -136,6 +142,17 @@ where
                 reason: format!("too many discards: {discarded} (limit {})", cfg.max_discards),
                 cases: passed,
                 discarded,
+                skipped,
+                seed: cfg.seed,
+                classifications,
+            };
+        }
+        if skipped > cfg.max_skips {
+            return Outcome::Aborted {
+                reason: format!("too many skips: {skipped} (limit {})", cfg.max_skips),
+                cases: passed,
+                discarded,
+                skipped,
                 seed: cfg.seed,
                 classifications,
             };
@@ -151,6 +168,7 @@ where
                 classifications.merge_case(labels);
             }
             CaseOutcome::Discard => discarded += 1,
+            CaseOutcome::Skip(_) => skipped += 1,
             CaseOutcome::Fail(message) => {
                 classifications.merge_case(labels);
                 let shrunk = shrink_with_strategy(strategy, val.clone(), prop, cfg.max_shrinks);
@@ -161,6 +179,7 @@ where
                     seed: cfg.seed,
                     attempt: passed + 1,
                     discarded,
+                    skipped,
                     classifications,
                 };
             }
@@ -169,6 +188,7 @@ where
     Outcome::Passed {
         cases: passed,
         discarded,
+        skipped,
         classifications,
     }
 }
@@ -224,6 +244,84 @@ macro_rules! prop_oneof {
     };
 }
 
+/// Defines a function returning a composite [`Strategy`] built from named
+/// sub-strategies and a body expression.
+///
+/// ```ignore
+/// use propcheck::strategy::str;
+/// propcheck::prop_compose! {
+///     pub fn valid_user()(
+///         name in str::ascii_alphanumeric(1..20),
+///         age in 18u8..100,
+///     ) -> User {
+///         User { name, age }
+///     }
+/// }
+/// ```
+///
+/// Each binding `name in expr` uses `expr` as a [`Strategy`] (or any value
+/// implementing `Strategy`; ranges like `0..10` work via the `IntRange`
+/// strategy's blanket impls). The body must return the target value type.
+///
+/// Shrinking is not preserved across `prop_compose!` — the generated
+/// strategy shrinks by re-deriving from each sub-strategy's shrinks for
+/// each field independently. For complex domains write a manual `Strategy`
+/// impl if you need finer-grained control.
+#[macro_export]
+macro_rules! prop_compose {
+    (
+        $(#[$attr:meta])*
+        $vis:vis fn $name:ident ( $($extra:tt)* ) ( $($field:ident in $strat:expr),* $(,)? ) -> $ret:ty
+        $body:block
+    ) => {
+        $(#[$attr])*
+        $vis fn $name ( $($extra)* ) -> impl $crate::strategy::Strategy<Value = $ret> {
+            $crate::__ComposedStrategy {
+                builder: ::std::sync::Arc::new(move |__rng: &mut dyn $crate::Rng, __size: usize| -> $ret {
+                    $(
+                        let $field = $crate::strategy::Strategy::new_value(&$strat, __rng, __size);
+                    )*
+                    $body
+                }),
+            }
+        }
+    };
+}
+
+/// Internal: a strategy whose `new_value` is a boxed closure and whose
+/// `shrink_value` returns nothing (composed strategies don't have a
+/// natural shrink path without preserving the input variables). Used by
+/// [`prop_compose!`].
+#[doc(hidden)]
+pub struct __ComposedStrategy<T> {
+    pub builder: ComposedBuilder<T>,
+}
+
+#[doc(hidden)]
+pub type ComposedBuilder<T> =
+    std::sync::Arc<dyn Fn(&mut dyn propcheck_core::Rng, usize) -> T + Send + Sync>;
+
+impl<T: Clone + std::fmt::Debug + 'static> propcheck_core::Strategy for __ComposedStrategy<T> {
+    type Value = T;
+    fn new_value<R: propcheck_core::Rng + ?Sized>(&self, rng: &mut R, size: usize) -> T {
+        // Use the same sized-wrapper trick as BoxedStrategy: wrap rng so
+        // it can be coerced to `&mut dyn Rng`.
+        struct W<'a, R: propcheck_core::Rng + ?Sized> {
+            inner: &'a mut R,
+        }
+        impl<R: propcheck_core::Rng + ?Sized> propcheck_core::Rng for W<'_, R> {
+            fn next_u64(&mut self) -> u64 {
+                self.inner.next_u64()
+            }
+        }
+        let mut wrap = W { inner: rng };
+        (self.builder)(&mut wrap, size)
+    }
+    fn shrink_value(&self, _value: &T) -> Vec<T> {
+        Vec::new()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -236,8 +334,10 @@ mod tests {
             max_shrinks: 256,
             max_size: 50,
             max_discards: 1000,
+            max_skips: 1000,
             silence_panic_hook: false,
             regression_replay: false,
+            shrink_mode: crate::ShrinkMode::Greedy,
         }
     }
 

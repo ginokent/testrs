@@ -76,8 +76,10 @@ fn derive_failure_shrinks_through_fields() {
         max_shrinks: 256,
         max_size: 30,
         max_discards: 1000,
+        max_skips: 1000,
         silence_panic_hook: false,
         regression_replay: false,
+        shrink_mode: propcheck::ShrinkMode::Greedy,
     };
     // Property: NamedStruct.a should never be > 200.
     let outcome = forall_with(cfg, |s: &NamedStruct| s.a <= 200);

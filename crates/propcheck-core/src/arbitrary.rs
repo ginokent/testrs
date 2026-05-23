@@ -162,21 +162,26 @@ macro_rules! impl_arbitrary_float {
     ($t:ty, $u:ty, $bits:expr) => {
         impl Arbitrary for $t {
             fn arbitrary<R: Rng + ?Sized>(rng: &mut R, size: usize) -> Self {
-                // 15% chance of an "interesting" boundary value covering
-                // zeros, units, subnormals, max/min, NaN, and infinities.
+                // ~15% chance of an "interesting" boundary value covering
+                // zeros, units, subnormals, max/min, NaN, infinities, and
+                // values close to integer boundaries.
                 let pick = rng.gen_range_u64(0, 20);
                 if pick < 3 {
-                    let interesting: [$t; 10] = [
+                    let interesting: [$t; 14] = [
                         0.0,
                         -0.0,
                         1.0,
                         -1.0,
+                        0.5,
+                        -0.5,
                         <$t>::INFINITY,
                         <$t>::NEG_INFINITY,
                         <$t>::NAN,
                         <$t>::MIN_POSITIVE,
+                        -<$t>::MIN_POSITIVE,
                         <$t>::MIN,
                         <$t>::MAX,
+                        <$t>::EPSILON,
                     ];
                     let idx = rng.gen_range_usize(0, interesting.len());
                     return interesting[idx];
@@ -187,7 +192,6 @@ macro_rules! impl_arbitrary_float {
                     return 0.0;
                 }
                 let bound = (size as $t).max(1.0);
-                // Squash into [-bound, bound] using rem (cheap and bounded).
                 f % bound
             }
 
@@ -196,6 +200,7 @@ macro_rules! impl_arbitrary_float {
                     return Box::new(std::iter::empty());
                 }
                 let mut out: Vec<$t> = Vec::new();
+                // Always try the most aggressive shrinks first.
                 out.push(0.0);
                 if *self < 0.0 && self.is_finite() {
                     out.push(-*self);
@@ -205,9 +210,23 @@ macro_rules! impl_arbitrary_float {
                     if truncated != *self {
                         out.push(truncated);
                     }
+                    // Try snapping to the nearest integer (round-half-to-even
+                    // by default; round() is fine here too).
+                    let rounded = self.round();
+                    if rounded != *self && rounded != truncated {
+                        out.push(rounded);
+                    }
                     let halved = *self / 2.0;
                     if halved != *self && halved != 0.0 {
                         out.push(halved);
+                    }
+                    // ULP-step toward zero for fine-grained shrinking.
+                    let bits = self.to_bits();
+                    if bits != 0 {
+                        let stepped = <$t>::from_bits(bits - 1);
+                        if stepped.abs() < self.abs() {
+                            out.push(stepped);
+                        }
                     }
                 }
                 Box::new(out.into_iter())
@@ -400,84 +419,38 @@ impl<A: Arbitrary> Arbitrary for (A,) {
     }
 }
 
-impl<A: Arbitrary, B: Arbitrary> Arbitrary for (A, B) {
-    fn arbitrary<R: Rng + ?Sized>(rng: &mut R, size: usize) -> Self {
-        (A::arbitrary(rng, size), B::arbitrary(rng, size))
-    }
-    fn shrink(&self) -> Box<dyn Iterator<Item = Self> + '_> {
-        let a_shrinks: Vec<A> = self.0.shrink().collect();
-        let b_shrinks: Vec<B> = self.1.shrink().collect();
-        let (a, b) = self.clone();
-        let mut out: Vec<Self> = Vec::with_capacity(a_shrinks.len() + b_shrinks.len());
-        for sa in a_shrinks {
-            out.push((sa, b.clone()));
+macro_rules! impl_arbitrary_tuple {
+    ($($name:ident: $idx:tt),+) => {
+        impl<$($name: Arbitrary),+> Arbitrary for ($($name,)+) {
+            fn arbitrary<R: Rng + ?Sized>(rng: &mut R, size: usize) -> Self {
+                ($($name::arbitrary(rng, size),)+)
+            }
+            fn shrink(&self) -> Box<dyn Iterator<Item = Self> + '_> {
+                let mut out: Vec<Self> = Vec::new();
+                let cloned = self.clone();
+                $(
+                    {
+                        let shrinks: Vec<_> = self.$idx.shrink().collect();
+                        for s in shrinks {
+                            let mut new_tup = cloned.clone();
+                            new_tup.$idx = s;
+                            out.push(new_tup);
+                        }
+                    }
+                )+
+                Box::new(out.into_iter())
+            }
         }
-        for sb in b_shrinks {
-            out.push((a.clone(), sb));
-        }
-        Box::new(out.into_iter())
-    }
+    };
 }
 
-impl<A: Arbitrary, B: Arbitrary, C: Arbitrary> Arbitrary for (A, B, C) {
-    fn arbitrary<R: Rng + ?Sized>(rng: &mut R, size: usize) -> Self {
-        (
-            A::arbitrary(rng, size),
-            B::arbitrary(rng, size),
-            C::arbitrary(rng, size),
-        )
-    }
-    fn shrink(&self) -> Box<dyn Iterator<Item = Self> + '_> {
-        let (a, b, c) = self.clone();
-        let a_s: Vec<A> = self.0.shrink().collect();
-        let b_s: Vec<B> = self.1.shrink().collect();
-        let c_s: Vec<C> = self.2.shrink().collect();
-        let mut out: Vec<Self> = Vec::with_capacity(a_s.len() + b_s.len() + c_s.len());
-        for sa in a_s {
-            out.push((sa, b.clone(), c.clone()));
-        }
-        for sb in b_s {
-            out.push((a.clone(), sb, c.clone()));
-        }
-        for sc in c_s {
-            out.push((a.clone(), b.clone(), sc));
-        }
-        Box::new(out.into_iter())
-    }
-}
-
-impl<A: Arbitrary, B: Arbitrary, C: Arbitrary, D: Arbitrary> Arbitrary for (A, B, C, D) {
-    fn arbitrary<R: Rng + ?Sized>(rng: &mut R, size: usize) -> Self {
-        (
-            A::arbitrary(rng, size),
-            B::arbitrary(rng, size),
-            C::arbitrary(rng, size),
-            D::arbitrary(rng, size),
-        )
-    }
-    fn shrink(&self) -> Box<dyn Iterator<Item = Self> + '_> {
-        let (a, b, c, d) = self.clone();
-        let a_s: Vec<A> = self.0.shrink().collect();
-        let b_s: Vec<B> = self.1.shrink().collect();
-        let c_s: Vec<C> = self.2.shrink().collect();
-        let d_s: Vec<D> = self.3.shrink().collect();
-        let mut out: Vec<Self> =
-            Vec::with_capacity(a_s.len() + b_s.len() + c_s.len() + d_s.len());
-        for sa in a_s {
-            out.push((sa, b.clone(), c.clone(), d.clone()));
-        }
-        for sb in b_s {
-            out.push((a.clone(), sb, c.clone(), d.clone()));
-        }
-        for sc in c_s {
-            out.push((a.clone(), b.clone(), sc, d.clone()));
-        }
-        for sd in d_s {
-            out.push((a.clone(), b.clone(), c.clone(), sd));
-        }
-        Box::new(out.into_iter())
-    }
-}
+impl_arbitrary_tuple!(A: 0, B: 1);
+impl_arbitrary_tuple!(A: 0, B: 1, C: 2);
+impl_arbitrary_tuple!(A: 0, B: 1, C: 2, D: 3);
+impl_arbitrary_tuple!(A: 0, B: 1, C: 2, D: 3, E: 4);
+impl_arbitrary_tuple!(A: 0, B: 1, C: 2, D: 3, E: 4, F: 5);
+impl_arbitrary_tuple!(A: 0, B: 1, C: 2, D: 3, E: 4, F: 5, G: 6);
+impl_arbitrary_tuple!(A: 0, B: 1, C: 2, D: 3, E: 4, F: 5, G: 6, H: 7);
 
 #[cfg(test)]
 mod tests {
