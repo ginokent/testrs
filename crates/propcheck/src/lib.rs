@@ -48,9 +48,9 @@ pub mod strategy_runner;
 pub use async_exec::block_on;
 pub use differential::{differential, differential_with};
 
-pub use assert::{PropAssertFailure, PropDiscard, PropSkip};
 #[doc(hidden)]
 pub use assert::{__current_context, __pop_context, __push_context};
+pub use assert::{PropAssertFailure, PropDiscard, PropSkip};
 pub use classify::Classifications;
 pub use propcheck_core::strategy;
 // `Arbitrary` as both the trait (from propcheck-core, type namespace) and the
