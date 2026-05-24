@@ -10,6 +10,9 @@
 - 依存方針: std とコンパイラ組み込みの `proc_macro` クレートのみ。
 - ワークスペース全体で `unsafe_code = "forbid"` (最小 `block_on` executor
   も `std::pin::pin!` を使い unsafe 回避)。
+- 配布方針: **crates.io には公開しない**。git dependency として参照
+  される運用を前提とする。依存先が git のみで配布されるクレートで
+  あっても問題視しない (本クレート自体の no-deps 方針は維持)。
 
 ## 凡例
 
@@ -214,6 +217,9 @@
 - ❌ **Mock / DI フレームワーク**。propcheck の責務外。
 - ❌ **時刻 / 乱数の注入**。ユーザコードや専用 faking ライブラリの
   領分。
+- ❌ **crates.io 公開向けメタデータ整備** (各サブクレートの `readme`
+  / `keywords` / `categories` 追加、`LICENSE-*` ファイル同梱、
+  公開順序ドキュメント等)。配布方針に従い crates.io 公開は行わない。
 
 ---
 
