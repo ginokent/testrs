@@ -1,19 +1,18 @@
-//! Model-based / state machine property testing.
+//! モデルベース / 状態機械のプロパティテストです。
 //!
-//! Useful for testing stateful APIs: containers, parsers, caches, simple
-//! virtual machines, etc. You define:
+//! コンテナ、パーサー、キャッシュ、簡単な仮想マシンなどの、状態を持つ API
+//! のテストに役立ちます。以下を定義します。
 //!
-//! 1. The state under test (often a tuple `(system_under_test, reference_model)`).
-//! 2. The set of operations to interleave.
-//! 3. An `execute` function that applies one operation to the state.
-//! 4. An `invariant` that must hold after every operation.
+//! 1. テスト対象の状態（多くの場合、タプル `(system_under_test, reference_model)`）。
+//! 2. インターリーブする操作のセット。
+//! 3. 1つの操作を状態に適用する `execute` 関数。
+//! 4. すべての操作の後に成立しなければならない `invariant`。
 //!
-//! The runner generates random operation sequences, applies them in
-//! order, and reports the first sequence that violates the invariant.
-//! Shrinking removes operations from the failing sequence and keeps the
-//! shortest one that still violates the invariant.
+//! ランナーはランダムな操作シーケンスを生成して順番に適用し、invariant に
+//! 違反する最初のシーケンスを報告します。shrink は失敗シーケンスから操作を
+//! 取り除き、それでも invariant に違反する最短のものを保持します。
 //!
-//! # Example
+//! # 例
 //!
 //! ```
 //! use propcheck::state_machine::{run_state_machine, StateMachine};
@@ -39,7 +38,7 @@
 //!         }
 //!     }
 //!     fn invariant(state: &Self::State) -> Result<(), String> {
-//!         // Trivially holds — change to a real check.
+//!         // 自明に成立します。実際のチェックに変更してください。
 //!         let _ = state.len();
 //!         Ok(())
 //!     }
@@ -57,27 +56,27 @@ use crate::panic_hook::SilentPanicHook;
 use crate::regression;
 use crate::{Classifications, Config, Outcome};
 
-/// Implement this trait to describe the state, operations, and invariant
-/// of the system under test.
+/// このトレイトを実装して、テスト対象システムの状態、操作、invariant を
+/// 記述します。
 pub trait StateMachine {
-    /// The state type, typically a tuple of (system_under_test, model).
+    /// 状態の型。通常は (system_under_test, model) のタプルです。
     type State: Clone + Debug;
-    /// One step the runner can apply to the state.
+    /// ランナーが状態に適用できる1ステップです。
     type Operation: Arbitrary;
 
-    /// Returns the initial state for each generated run.
+    /// 生成された各実行の初期状態を返します。
     fn initial_state() -> Self::State;
 
-    /// Applies `op` to `state`.
+    /// `op` を `state` に適用します。
     fn execute(state: &mut Self::State, op: &Self::Operation);
 
-    /// Returns `Ok(())` if the post-state is consistent. The returned
-    /// error string is included in the failure report.
+    /// 事後状態が一貫していれば `Ok(())` を返します。返されたエラー
+    /// 文字列は失敗レポートに含まれます。
     fn invariant(state: &Self::State) -> Result<(), String>;
 }
 
-/// Runs a [`StateMachine`] against a series of randomly generated
-/// operation sequences and panics on the first invariant violation.
+/// [`StateMachine`] をランダムに生成された一連の操作シーケンスに対して
+/// 実行し、最初の invariant 違反で panic します。
 pub fn run_state_machine<M: StateMachine + 'static>(name: &str, cfg: Config) {
     let seed = cfg.seed;
     let regression_path = if cfg.regression_replay {
@@ -157,7 +156,7 @@ fn run_sm_loop<M: StateMachine + 'static>(
     cfg: &Config,
     regression_seeds: &[u64],
 ) -> Outcome<Vec<M::Operation>> {
-    // Replay regression seeds first.
+    // 最初にリグレッション用シードをリプレイします。
     for &rseed in regression_seeds {
         let mut rng = XorShift64::seed_from_u64(rseed);
         let sequence: Vec<M::Operation> = generate_sequence::<M, _>(&mut rng, cfg.max_size);
@@ -216,8 +215,8 @@ where
         .collect()
 }
 
-/// Runs the sequence and returns Err with the invariant violation message
-/// (or any panic message) on the first failing step.
+/// シーケンスを実行し、最初に失敗したステップで invariant 違反メッセージ
+/// （または任意の panic メッセージ）を Err で返します。
 fn simulate<M: StateMachine>(sequence: &[M::Operation]) -> Result<(), String> {
     let result = panic::catch_unwind(AssertUnwindSafe(|| -> Result<(), String> {
         let mut state = M::initial_state();
@@ -244,8 +243,8 @@ fn simulate<M: StateMachine>(sequence: &[M::Operation]) -> Result<(), String> {
     }
 }
 
-/// Greedy minimization: try removing one operation at a time, keep the
-/// removal when the shorter sequence still violates the invariant.
+/// 貪欲な最小化: 1度に1つの操作を取り除いてみて、短くなったシーケンスが
+/// 依然として invariant に違反する場合はその削除を維持します。
 fn shrink_sequence<M: StateMachine>(
     initial: &[M::Operation],
     max_steps: usize,

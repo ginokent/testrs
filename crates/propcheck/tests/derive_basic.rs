@@ -1,4 +1,4 @@
-//! Integration tests for `#[derive(Arbitrary)]` and `#[propcheck]`.
+//! `#[derive(Arbitrary)]`および`#[propcheck]`のインテグレーションテストです。
 
 use propcheck::{run, Arbitrary};
 
@@ -54,15 +54,15 @@ fn derive_generic_struct_works_with_arbitrary_inner() {
     use propcheck::XorShift64;
     let mut rng = XorShift64::seed_from_u64(4);
     let v: Generic<u32> = Arbitrary::arbitrary(&mut rng, 10);
-    // Use it through the runner to exercise the full pipeline.
+    // ランナーを介して利用し、全体のパイプラインを動作確認します。
     let _: () = v.shrink().next().map(|_| ()).unwrap_or(());
 }
 
 #[test]
 fn derive_works_inside_property_test() {
     run("named struct round-trip", |s: &NamedStruct| {
-        // Trivially true property — we're just checking that the derive
-        // produces values the runner can use.
+        // 自明に真のプロパティ。deriveがランナーで利用できる値を生成することを
+        // 確認するだけのテストです。
         s.a == s.a && s.b == s.b && s.c == s.c
     });
 }
@@ -81,12 +81,12 @@ fn derive_failure_shrinks_through_fields() {
         regression_replay: false,
         shrink_mode: propcheck::ShrinkMode::Greedy,
     };
-    // Property: NamedStruct.a should never be > 200.
+    // プロパティ: NamedStruct.aは決して200を超えない。
     let outcome = forall_with(cfg, |s: &NamedStruct| s.a <= 200);
     match outcome {
         Outcome::Failed { shrunk, .. } => {
             assert!(shrunk.a > 200, "expected shrunk.a > 200, got {}", shrunk.a);
-            // Shrinking should reduce the unrelated fields toward defaults.
+            // shrinkingは無関係なフィールドをデフォルト値に向けて縮小するはずです。
             assert!(
                 shrunk.b.is_empty() || shrunk.b.len() <= 5,
                 "expected b to shrink, got {:?}",
@@ -102,7 +102,7 @@ fn derive_failure_shrinks_through_fields() {
     }
 }
 
-// --- #[propcheck] attribute --------------------------------------------
+// --- #[propcheck]属性 --------------------------------------------
 
 #[propcheck::propcheck]
 fn attribute_macro_zero_args() {
@@ -121,27 +121,27 @@ fn attribute_macro_two_args(a: i32, b: i32) {
 
 #[propcheck::propcheck]
 fn attribute_macro_with_derive(s: NamedStruct) {
-    // Use prop_assume! to skip cases where the property would be trivial.
+    // プロパティが自明になるケースをスキップするためにprop_assume!を使います。
     propcheck::prop_assume!(!s.c.is_empty());
     propcheck::prop_assert_eq!(s.c.len(), s.c.iter().count());
 }
 
 #[propcheck::propcheck(cases = 50, max_size = 20)]
 fn attribute_macro_with_args(n: u8) {
-    // The runner should run exactly 50 cases (we can't observe that from
-    // here directly, but the test compiling and passing with the override
-    // proves the parser accepts it).
+    // ランナーはちょうど50ケースを実行するはずです（ここから直接観測することは
+    // できませんが、このオーバーライドでテストがコンパイル・成功することで、
+    // パーサがそれを受け付けることが確認できます）。
     propcheck::prop_assert_eq!(n.wrapping_add(0), n);
 }
 
 #[propcheck::propcheck(seed = 12345)]
 fn attribute_macro_with_seed(n: u32) {
-    // Fixed seed -> deterministic run. We can't easily observe the seed
-    // here, but the function must compile and pass with a seed override.
+    // 固定seed -> 決定的な実行。ここでseedを直接観測するのは難しいですが、
+    // この関数はseedオーバーライドつきでコンパイル・成功する必要があります。
     propcheck::prop_assert!(n == n);
 }
 
-// Result return type using the `?` operator.
+// `?`演算子を使ったResult戻り値型。
 #[propcheck::propcheck]
 fn attribute_macro_with_result(s: String) -> Result<(), std::num::ParseIntError> {
     propcheck::prop_assume!(!s.is_empty());

@@ -1,4 +1,4 @@
-//! Tests for the async-fn property support and the `block_on` helper.
+//! async fnプロパティサポートおよび`block_on`ヘルパーのテストです。
 
 use propcheck::{block_on, prop_assert_eq};
 
@@ -21,7 +21,7 @@ fn block_on_drives_nested_await() {
     assert_eq!(v, 12);
 }
 
-// --- #[propcheck] on async fn ----------------------------------------
+// --- async fnに対する#[propcheck] ----------------------------------------
 
 #[propcheck::propcheck]
 async fn async_property_with_await(n: u32) {
@@ -34,14 +34,14 @@ async fn async_property_with_await(n: u32) {
 
 #[propcheck::propcheck(cases = 50)]
 async fn async_property_with_attr_args(a: u16, b: u16) {
-    // Trivial property exercising the attribute-args + async path.
+    // 属性引数 + asyncパスを動作確認するための自明なプロパティ。
     prop_assert_eq!(a as u32 + b as u32, (a as u32).wrapping_add(b as u32));
 }
 
 #[propcheck::propcheck]
 async fn async_property_returning_result(s: String) -> Result<(), std::num::ParseIntError> {
-    // Skip the noisy case where s isn't a digit string; otherwise verify
-    // a parse round-trip in an async context.
+    // sが数字文字列でないノイジーなケースはスキップし、それ以外の場合に
+    // asyncコンテキストでのparseの往復変換を検証します。
     if !s.chars().all(|c| c.is_ascii_digit()) || s.is_empty() || s.len() > 18 {
         return Ok(());
     }

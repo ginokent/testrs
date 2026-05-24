@@ -1,10 +1,10 @@
-//! Thread-safe RAII silencer for the global panic hook.
+//! グローバルな panic hook 用のスレッドセーフな RAII サイレンサーです。
 //!
-//! The panic hook is process-wide, so multiple threads running property
-//! tests concurrently must not each set then unset it independently —
-//! they'd race and lose the original. This module wraps install/restore in
-//! a reference-counted guard: the first guard installs a silent hook (and
-//! saves the previous one), the last guard to drop restores it.
+//! panic hook はプロセス全体で共有されるため、プロパティテストを並行して実行する
+//! 複数のスレッドがそれぞれ独立に設定・解除を行ってはいけません。競合して元の hook
+//! が失われてしまいます。このモジュールでは install/restore を参照カウント付きの
+//! ガードでラップしています。最初のガードがサイレントな hook をインストールし
+//! （元の hook を保存し）、最後に drop されるガードがそれを復元します。
 
 use std::panic::{self, PanicHookInfo};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -15,14 +15,14 @@ static REFCOUNT: AtomicUsize = AtomicUsize::new(0);
 static SAVED: Mutex<Option<Box<dyn Fn(&PanicHookInfo<'_>) + Send + Sync + 'static>>> =
     Mutex::new(None);
 
-/// RAII guard that silences panic output for as long as it is alive.
+/// 生存している間 panic 出力を抑止する RAII ガードです。
 pub(crate) struct SilentPanicHook {
     _private: (),
 }
 
 impl SilentPanicHook {
-    /// Installs a silent hook (or bumps the reference count if one is
-    /// already installed by an outer guard).
+    /// サイレントな hook をインストールします（外側のガードによってすでに
+    /// インストールされている場合は参照カウントを増やします）。
     pub(crate) fn install() -> Self {
         if REFCOUNT.fetch_add(1, Ordering::SeqCst) == 0 {
             let prev = panic::take_hook();

@@ -1,5 +1,6 @@
-//! Demonstrates property-based testing of stdlib sort against several
-//! invariants. Run with `cargo run --example sort_props -p propcheck`.
+//! 標準ライブラリのsortに対する複数の不変条件をプロパティベーステストで
+//! 検証する例を示します。`cargo run --example sort_props -p propcheck`で
+//! 実行してください。
 
 use propcheck::run;
 

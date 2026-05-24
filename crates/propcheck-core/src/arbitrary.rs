@@ -1,30 +1,30 @@
-//! The [`Arbitrary`] trait and impls for common types.
+//! [`Arbitrary`] トレイトと一般的な型に対するその実装です。
 //!
-//! Implement [`Arbitrary`] for your own types to make them usable with
-//! `propcheck`'s property-based test runner. The trait combines two
-//! responsibilities:
+//! 独自の型に対して [`Arbitrary`] を実装すれば、`propcheck` のプロパティベース
+//! テストランナーで使えるようになります。このトレイトは2つの責務を兼ねています。
 //!
-//! - **Generation:** produce a random value given an [`Rng`] and a `size`
-//!   hint that callers typically grow over the course of a run.
-//! - **Shrinking:** given a counterexample, propose smaller candidates that
-//!   may also fail the property. The runner repeatedly walks the shrink tree
-//!   to find a minimal counterexample.
+//! - **生成:** [`Rng`] と `size` ヒントを受け取ってランダム値を生成します。
+//!   呼び出し側は通常、実行中に `size` を徐々に大きくしていきます。
+//! - **Shrinking:** 反例が与えられたとき、同じくプロパティを失敗させうる
+//!   より小さい候補を提案します。ランナーはshrinkツリーを繰り返したどって
+//!   最小の反例を探索します。
 
 use crate::rng::Rng;
 use std::fmt::Debug;
 
-/// Trait for types that can be randomly generated and shrunk.
+/// 値をランダム生成しshrinkできる型のためのトレイトです。
 ///
-/// The default `shrink` returns an empty iterator (i.e. "no smaller value
-/// known"), which is a valid but unhelpful implementation for custom types.
+/// デフォルトの `shrink` は空のイテレータを返します（つまり「より小さい値は
+/// 知られていない」という意味）。これは正しい実装ですが、独自の型にとっては
+/// 役に立たない実装です。
 pub trait Arbitrary: Sized + Clone + Debug {
-    /// Generates a random value. `size` is an upper bound on the "magnitude"
-    /// of the value (e.g. collection length, integer bit width). The runner
-    /// typically grows `size` linearly across cases.
+    /// ランダムな値を生成します。`size` は値の「大きさ」（例えばコレクションの
+    /// 長さや整数のビット幅など）の上限です。ランナーは通常、ケースをまたいで
+    /// `size` を線形に増やしていきます。
     fn arbitrary<R: Rng + ?Sized>(rng: &mut R, size: usize) -> Self;
 
-    /// Returns an iterator of strictly smaller candidates. Smaller-first
-    /// ordering is preferred so shrinking converges quickly.
+    /// 厳密により小さい候補を返すイテレータです。shrinkが速く収束するように、
+    /// 小さいものを先に並べる順序が好まれます。
     fn shrink(&self) -> Box<dyn Iterator<Item = Self> + '_> {
         Box::new(std::iter::empty())
     }
@@ -46,7 +46,7 @@ impl Arbitrary for bool {
     }
 }
 
-// --- unsigned integers --------------------------------------------------
+// --- 符号なし整数 -------------------------------------------------------
 
 fn shrink_toward_zero_u128(n: u128) -> Vec<u128> {
     if n == 0 {
@@ -71,7 +71,7 @@ macro_rules! impl_arbitrary_uint {
     ($($t:ty),*) => {$(
         impl Arbitrary for $t {
             fn arbitrary<R: Rng + ?Sized>(rng: &mut R, size: usize) -> Self {
-                // Bias toward small values early in a run by capping bit-width to ~2 * size.
+                // 実行序盤では小さい値に偏らせるため、ビット幅を約 2 * size に制限します。
                 let bits = (<$t>::BITS as usize).min(size.saturating_mul(2).max(8));
                 let mask: u128 = if bits >= 128 { u128::MAX } else { (1u128 << bits) - 1 };
                 let high = rng.next_u64() as u128;
@@ -93,14 +93,14 @@ macro_rules! impl_arbitrary_uint {
 
 impl_arbitrary_uint!(u8, u16, u32, u64, u128, usize);
 
-// --- signed integers ----------------------------------------------------
+// --- 符号付き整数 -------------------------------------------------------
 
 fn shrink_signed_i128(n: i128) -> Vec<i128> {
     if n == 0 {
         return Vec::new();
     }
     let mut out = vec![0i128];
-    // Try flipping sign (the absolute value) as a first move.
+    // 最初の手として、符号を反転した値（絶対値）を試します。
     if n < 0 && n != i128::MIN {
         let abs = -n;
         if !out.contains(&abs) {
@@ -130,8 +130,8 @@ macro_rules! impl_arbitrary_int {
                 let high = rng.next_u64() as u128;
                 let low = rng.next_u64() as u128;
                 let bits_val = ((high << 64) | low) & mask;
-                // Sign-extend from `bits` to the full width by casting through
-                // the unsigned and then signed views.
+                // 符号なし、次に符号付きビューを経由してキャストすることで、
+                // `bits` から完全な幅へ符号拡張します。
                 let max_pos: u128 = if bits >= 128 { u128::MAX } else { (1u128 << bits) - 1 };
                 let half = max_pos / 2 + 1;
                 let signed = if bits_val >= half && bits < 128 {
@@ -156,15 +156,15 @@ macro_rules! impl_arbitrary_int {
 
 impl_arbitrary_int!(i8, i16, i32, i64, i128, isize);
 
-// --- floats -------------------------------------------------------------
+// --- 浮動小数点数 -------------------------------------------------------
 
 macro_rules! impl_arbitrary_float {
     ($t:ty, $u:ty, $bits:expr) => {
         impl Arbitrary for $t {
             fn arbitrary<R: Rng + ?Sized>(rng: &mut R, size: usize) -> Self {
-                // ~15% chance of an "interesting" boundary value covering
-                // zeros, units, subnormals, max/min, NaN, infinities, and
-                // values close to integer boundaries.
+                // 約15%の確率で「興味深い」境界値を返します。これにはゼロ、
+                // 単位値、非正規化数、max/min、NaN、無限大、整数境界に近い
+                // 値が含まれます。
                 let pick = rng.gen_range_u64(0, 20);
                 if pick < 3 {
                     let interesting: [$t; 14] = [
@@ -200,7 +200,7 @@ macro_rules! impl_arbitrary_float {
                     return Box::new(std::iter::empty());
                 }
                 let mut out: Vec<$t> = Vec::new();
-                // Always try the most aggressive shrinks first.
+                // 常に最も強いshrinkから先に試します。
                 out.push(0.0);
                 if *self < 0.0 && self.is_finite() {
                     out.push(-*self);
@@ -210,8 +210,8 @@ macro_rules! impl_arbitrary_float {
                     if truncated != *self {
                         out.push(truncated);
                     }
-                    // Try snapping to the nearest integer (round-half-to-even
-                    // by default; round() is fine here too).
+                    // 最も近い整数へのスナップを試します（デフォルトでは
+                    // 偶数丸めですが、ここでは round() でも問題ありません）。
                     let rounded = self.round();
                     if rounded != *self && rounded != truncated {
                         out.push(rounded);
@@ -220,7 +220,7 @@ macro_rules! impl_arbitrary_float {
                     if halved != *self && halved != 0.0 {
                         out.push(halved);
                     }
-                    // ULP-step toward zero for fine-grained shrinking.
+                    // 細粒度のshrinkのためにULP単位でゼロに向かって1ステップ進めます。
                     let bits = self.to_bits();
                     if bits != 0 {
                         let stepped = <$t>::from_bits(bits - 1);
@@ -242,7 +242,7 @@ impl_arbitrary_float!(f64, u64, 64);
 
 impl Arbitrary for char {
     fn arbitrary<R: Rng + ?Sized>(rng: &mut R, _size: usize) -> Self {
-        // 80% printable ASCII, 20% wider Unicode (avoiding surrogates).
+        // 80%は印字可能なASCII、20%はより広範なUnicode（サロゲートは除く）です。
         if rng.gen_range_u64(0, 5) > 0 {
             let code = rng.gen_range_u64(0x20, 0x7f) as u32;
             char::from_u32(code).unwrap_or('a')
@@ -298,9 +298,9 @@ impl<T: Arbitrary> Arbitrary for Vec<T> {
         if len == 0 {
             return Box::new(candidates.into_iter());
         }
-        // Empty vec is the most aggressive shrink.
+        // 空の vec が最も強いshrinkです。
         candidates.push(Vec::new());
-        // Halve-length prefixes.
+        // 長さを半分にしたプレフィックス。
         let mut chunk = len;
         loop {
             chunk /= 2;
@@ -309,7 +309,7 @@ impl<T: Arbitrary> Arbitrary for Vec<T> {
             }
             candidates.push(self[..(len - chunk)].to_vec());
         }
-        // Remove single element at each index.
+        // 各インデックスから要素を1つずつ取り除きます。
         if len > 1 {
             for i in 0..len {
                 let mut v = self.clone();
@@ -317,7 +317,7 @@ impl<T: Arbitrary> Arbitrary for Vec<T> {
                 candidates.push(v);
             }
         }
-        // Shrink each element in place.
+        // 各要素をその場でshrinkします。
         for i in 0..len {
             let shrinks: Vec<T> = self[i].shrink().collect();
             for s in shrinks {
@@ -400,7 +400,7 @@ impl<T: Arbitrary, E: Arbitrary> Arbitrary for Result<T, E> {
     }
 }
 
-// --- tuples -------------------------------------------------------------
+// --- タプル -------------------------------------------------------------
 
 impl Arbitrary for () {
     fn arbitrary<R: Rng + ?Sized>(_rng: &mut R, _size: usize) -> Self {}
@@ -485,7 +485,7 @@ mod tests {
 
     #[test]
     fn signed_shrink_handles_min() {
-        // Must not panic on i8::MIN despite -i8::MIN overflowing.
+        // -i8::MIN がオーバーフローするにもかかわらず、i8::MIN でも panic してはいけません。
         let candidates: Vec<i8> = i8::MIN.shrink().collect();
         assert_eq!(candidates[0], 0);
     }
@@ -527,8 +527,8 @@ mod tests {
         let mut rng = r();
         for _ in 0..100 {
             let s: String = Arbitrary::arbitrary(&mut rng, 20);
-            // If it compiles and was constructed, it's valid UTF-8 by
-            // construction. Just exercise it to make sure no panics.
+            // コンパイルが通って構築できれば、構築の仕方から有効な UTF-8 です。
+            // panic しないことを確認するためだけに使ってみます。
             let _ = s.len();
         }
     }

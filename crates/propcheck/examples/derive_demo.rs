@@ -1,9 +1,9 @@
-//! Demonstrates the full propcheck workflow including the post-Tier-A
-//! additions: `#[arbitrary(strategy = ...)]` field attributes, dependent
-//! generation via `flat_map`, recursive data via `prop_recursive!`,
-//! `prop_assert_close!`, and the rest of the toolkit working together.
+//! Tier-A以降に追加された機能を含む、propcheckの完全なワークフローを実演します。
+//! 具体的には、`#[arbitrary(strategy = ...)]`フィールド属性、`flat_map`による
+//! 依存生成、`prop_recursive!`による再帰データ、`prop_assert_close!`、
+//! そしてその他のツール群が連携して動作することを示します。
 //!
-//! Run with: `cargo run --example derive_demo -p propcheck`
+//! 実行方法: `cargo run --example derive_demo -p propcheck`
 
 use propcheck::strategy::{any, int_range, just, str, vec_of, StrategyExt};
 use propcheck::{
@@ -13,8 +13,8 @@ use propcheck::{
 
 #[derive(Arbitrary, Debug, Clone, PartialEq)]
 struct User {
-    // Field attributes constrain the generator domain so the test never
-    // wastes cases on nonsensical inputs.
+    // フィールド属性によりジェネレータの値域を制約するため、
+    // テストが無意味な入力に試行を浪費することはありません。
     #[arbitrary(strategy = "str::ascii_alphanumeric(1..16)")]
     name: String,
     #[arbitrary(strategy = int_range(18u8..100))]
@@ -32,8 +32,8 @@ enum Json {
 }
 
 fn main() {
-    // 1. Field attributes keep the generator inside the domain — no
-    //    discards needed, classifications reflect the real distribution.
+    // 1. フィールド属性がジェネレータを値域内に保つため、discardは不要で、
+    //    classificationsは実際の分布を反映します。
     run("User invariants hold under derived generator", |u: &User| {
         classify!(u.favorite_numbers.is_empty(), "no-favorites");
         classify!(u.favorite_numbers.len() >= 3, "many-favorites");
@@ -42,14 +42,14 @@ fn main() {
         true
     });
 
-    // 2. prop_assert_matches! makes Result/Option/enum assertions readable.
+    // 2. prop_assert_matches!はResult/Option/enumのアサーションを読みやすくします。
     run("name parses as identifier-like", |u: &User| {
         let first = u.name.chars().next();
         prop_assert_matches!(first, Some(c) if c.is_ascii_alphanumeric());
         true
     });
 
-    // 3. Recursive data via prop_recursive!.
+    // 3. prop_recursive!による再帰データ。
     let json_strategy = prop_recursive! {
         leaf = prop_oneof![
             just(Json::Null),
@@ -76,8 +76,7 @@ fn main() {
         },
     );
 
-    // 4. Dependent generation via flat_map: pick a length, then a Vec of
-    //    that exact length.
+    // 4. flat_mapによる依存生成: まず長さを選び、その長さちょうどのVecを生成します。
     let dependent = int_range(1usize..6).flat_map(|len| vec_of(any::<i32>(), len..len + 1));
     run_strategy_with(
         "length-dependent Vec has expected size",
@@ -89,17 +88,17 @@ fn main() {
         },
     );
 
-    // 5. Floating-point approximate equality via prop_assert_close!.
-    //    sin(2x) ≈ 2 * sin(x) * cos(x).
+    // 5. prop_assert_close!による浮動小数点の近似等価判定。
+    //    sin(2x) ≈ 2 * sin(x) * cos(x)。
     run("trig double-angle identity", |&x: &f64| {
         prop_assume!(x.is_finite() && x.abs() < 1e6);
         prop_assert_close!((2.0 * x).sin(), 2.0 * x.sin() * x.cos(), epsilon = 1e-9);
         true
     });
 
-    // 6. Intentionally false property to demonstrate failure output +
-    //    field-level shrinking through the field-attribute strategy.
-    //    `age` shrinks toward 18 (the int_range lower bound), not 0.
+    // 6. 失敗時の出力と、フィールド属性のstrategyを介したフィールド単位の
+    //    shrinkを実演するため、意図的に偽となるプロパティです。
+    //    `age`は0ではなく18（int_rangeの下限）に向かってshrinkされます。
     run("user.age is never above 50", |u: &User| {
         prop_assert!(u.age <= 50, "expected age <= 50, got {}", u.age);
         true

@@ -1,5 +1,4 @@
-//! Tests for `#[derive(Arbitrary)]` on enums and structs with `where`
-//! clauses.
+//! enumおよび`where`句つきの構造体に対する`#[derive(Arbitrary)]`のテストです。
 
 use propcheck::{forall_with, run, Arbitrary, Config, XorShift64};
 
@@ -74,8 +73,9 @@ fn enum_with_fields_arbitrary_works() {
 
 #[test]
 fn enum_shrinks_to_simplest_variant_when_property_universally_fails() {
-    // An always-false property: every variant fails, so the shrinker can
-    // collapse non-unit variants into the simplest (Empty) and accept it.
+    // 常に偽となるプロパティ。すべてのバリアントが失敗するため、shrinkerは
+    // unit以外のバリアントを最もシンプルなもの（Empty）に潰し、それを受け入れる
+    // ことができます。
     let outcome = forall_with(no_replay_cfg(3), |_: &WithFields| false);
     assert!(outcome.is_failed());
     assert_eq!(*outcome.shrunk().unwrap(), WithFields::Empty);
@@ -83,9 +83,9 @@ fn enum_shrinks_to_simplest_variant_when_property_universally_fails() {
 
 #[test]
 fn enum_shrinks_within_variant_when_collapse_doesnt_help() {
-    // Property fails *only* for the Pair variant. The collapse to Empty
-    // would make the property pass (so collapse is rejected); the shrinker
-    // stays inside Pair and reduces its fields toward defaults.
+    // プロパティはPairバリアントの場合*のみ*失敗します。Emptyへの潰しは
+    // プロパティを成功させてしまうため拒否され、shrinkerはPair内に留まり、
+    // フィールドをデフォルト値に向けて縮小します。
     let outcome = forall_with(no_replay_cfg(3), |v: &WithFields| {
         !matches!(v, WithFields::Pair(_, _))
     });
@@ -95,13 +95,13 @@ fn enum_shrinks_within_variant_when_collapse_doesnt_help() {
 
 #[test]
 fn enum_shrinks_fields_within_variant_when_no_unit_collapse_applies() {
-    // Property: any WithFields::Pair has its first u8 <= 200.
-    // Shrink should converge on Pair(201, "") because the simplest variant
-    // (Empty) makes the matches!() guard skip and the property pass; so
-    // the shrinker stays within Pair and reduces the fields.
+    // プロパティ: 任意のWithFields::Pairは最初のu8が200以下である。
+    // 最もシンプルなバリアント（Empty）ではmatches!()のガードによってスキップされ
+    // プロパティが成功するため、shrinkはPair(201, "")に収束するはずです。
+    // したがってshrinkerはPair内に留まり、フィールドを縮小します。
     //
-    // We test this via a property that *only* fires on Pair and checks a
-    // field invariant.
+    // このテストは、Pair上で*のみ*発火しフィールドの不変条件をチェックする
+    // プロパティを用いて検証します。
     let outcome = forall_with(no_replay_cfg(4), |v: &WithFields| match v {
         WithFields::Pair(n, _) => *n <= 200,
         _ => true,
@@ -141,7 +141,7 @@ fn generic_enum_drives_run() {
     });
 }
 
-// --- where clauses ----------------------------------------------------
+// --- where句 ----------------------------------------------------
 
 #[derive(Arbitrary, Debug, Clone)]
 struct WhereOwned<T>
@@ -177,7 +177,7 @@ fn enum_with_where_clause_works() {
     }
 }
 
-// --- attribute macro + derive enum combination -----------------------
+// --- 属性マクロ + derive enumの組み合わせ -----------------------
 
 #[propcheck::propcheck]
 fn enum_attribute_round_trip(e: SimpleEnum) {

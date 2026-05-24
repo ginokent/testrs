@@ -1,14 +1,13 @@
-//! A minimal `block_on` executor built only on `std`.
+//! `std` のみで構築された、最小限の `block_on` executor です。
 //!
-//! Adequate for driving the `Future`s a typical property body produces:
-//! single-task, no I/O reactor, no work-stealing. If your property uses
-//! tokio-specific features (timers, network sockets, file IO) you'll
-//! need a real runtime — propcheck's executor only blocks the current
-//! thread until the future completes.
+//! 一般的なプロパティ本体が生成する `Future` を駆動するには十分です。
+//! シングルタスクで、I/O reactor も work-stealing もありません。プロパティが
+//! tokio 固有の機能（timer、ネットワークソケット、ファイル IO）を使う場合は、
+//! 本格的なランタイムが必要になります。propcheck の executor は future が
+//! 完了するまで現在のスレッドをブロックするだけです。
 //!
-//! This is exposed so the `#[propcheck]` attribute macro can wrap `async
-//! fn` properties without forcing a runtime dependency. It can also be
-//! called directly:
+//! これは、`#[propcheck]` 属性マクロが `async fn` プロパティをランタイム依存
+//! を強制せずにラップできるように公開されています。直接呼び出すこともできます。
 //!
 //! ```
 //! use propcheck::block_on;
@@ -21,10 +20,10 @@ use std::pin::pin;
 use std::sync::{Arc, Condvar, Mutex};
 use std::task::{Context, Poll, Wake, Waker};
 
-/// Polls `future` to completion on the current thread.
+/// 現在のスレッド上で `future` を完了までポーリングします。
 ///
-/// Wakes are coordinated via a `Condvar` parking primitive. The future is
-/// pinned to the stack via `std::pin::pin!` (safe).
+/// Wake は `Condvar` を用いた parking プリミティブで調整されます。future は
+/// `std::pin::pin!` を介してスタックに pin 留めされます（安全）。
 pub fn block_on<F: Future>(future: F) -> F::Output {
     let mut pinned = pin!(future);
     let parker = Arc::new(Parker::new());

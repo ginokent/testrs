@@ -1,7 +1,7 @@
-//! Tests for `#[arbitrary(strategy = ...)]` field attributes on derive.
+//! derive上の`#[arbitrary(strategy = ...)]`フィールド属性のテストです。
 //!
-//! Both the string-literal and bare-expression forms are exercised, plus
-//! shrink-through-strategy verification.
+//! 文字列リテラル形式と素の式形式の両方を動作確認し、加えてstrategy越しの
+//! shrinkも検証します。
 
 use propcheck::strategy::{int_range, str, vec_of, Strategy, StrategyExt};
 use propcheck::{forall_with, run, Arbitrary, Config, XorShift64};
@@ -16,7 +16,7 @@ fn cfg(seed: u64) -> Config {
     }
 }
 
-// --- string-literal form ---------------------------------------------
+// --- 文字列リテラル形式 ---------------------------------------------
 
 #[derive(Arbitrary, Debug, Clone, PartialEq)]
 struct ConfigStr {
@@ -24,7 +24,7 @@ struct ConfigStr {
     name: String,
     #[arbitrary(strategy = "int_range(1024u16..65535)")]
     port: u16,
-    // Default Arbitrary for this one.
+    // こちらはデフォルトのArbitraryを使用。
     body: Vec<u8>,
 }
 
@@ -34,13 +34,13 @@ fn string_literal_strategy_constrains_field_values() {
         propcheck::prop_assert!(!c.name.is_empty());
         propcheck::prop_assert!(c.name.chars().all(|c| c.is_ascii_alphanumeric()));
         propcheck::prop_assert!(c.port >= 1024);
-        // body is unconstrained — just check it's a Vec.
+        // bodyは制約なし。Vecであることだけを確認します。
         let _ = c.body.len();
         true
     });
 }
 
-// --- bare-expression form -------------------------------------------
+// --- 素の式形式 -------------------------------------------
 
 #[derive(Arbitrary, Debug, Clone, PartialEq)]
 struct ConfigExpr {
@@ -60,7 +60,7 @@ fn bare_expression_strategy_works() {
     });
 }
 
-// --- tuple struct with field attrs ----------------------------------
+// --- フィールド属性つきのタプル構造体 ----------------------------------
 
 #[derive(Arbitrary, Debug, Clone, PartialEq)]
 struct Pair(
@@ -78,7 +78,7 @@ fn tuple_struct_field_attrs_work() {
     }
 }
 
-// --- enum variants with field attrs ---------------------------------
+// --- フィールド属性つきのenumバリアント ---------------------------------
 
 #[derive(Arbitrary, Debug, Clone, PartialEq)]
 enum Message {
@@ -106,7 +106,7 @@ fn enum_variant_field_attrs_constrain_payload() {
     });
 }
 
-// --- shrink propagates through strategy ----------------------------
+// --- shrinkがstrategyを通じて伝播する ----------------------------
 
 #[derive(Arbitrary, Debug, Clone, PartialEq)]
 struct Constrained {
@@ -116,18 +116,18 @@ struct Constrained {
 
 #[test]
 fn shrink_uses_strategy_not_default_arbitrary() {
-    // Property: value never exceeds 50. Fails for many cases; shrunk
-    // should be 50 (the int_range strategy shrinks toward 10, and the
-    // boundary where the property first fails is 50).
+    // プロパティ: valueは決して50を超えない。多くのケースで失敗し、
+    // shrinkされた値は50となるはずです（int_range strategyは10に向かってshrink
+    // し、プロパティが最初に失敗する境界が50です）。
     let outcome = forall_with(cfg(11), |c: &Constrained| c.value <= 50);
     assert!(outcome.is_failed());
     let shrunk = outcome.shrunk().unwrap();
-    // The strategy shrinks toward 10, never going below. So shrunk.value
-    // is at the failure boundary 50.
+    // strategyは10に向かってshrinkし、それより下には行きません。そのため
+    // shrunk.valueは失敗境界の50となります。
     assert_eq!(shrunk.value, 51);
 }
 
-// --- strategy expression can call user functions -------------------
+// --- strategy式はユーザ定義関数を呼べる -------------------
 
 fn small_evens() -> impl Strategy<Value = i32> {
     int_range(0i32..1000).filter(|n| n % 2 == 0)
@@ -148,7 +148,7 @@ fn field_strategy_can_call_user_fns() {
     });
 }
 
-// --- combined with vec_of ------------------------------------------
+// --- vec_ofとの組み合わせ ------------------------------------------
 
 #[derive(Arbitrary, Debug, Clone, PartialEq)]
 struct Bag {

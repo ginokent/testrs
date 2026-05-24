@@ -1,4 +1,4 @@
-//! Tests for the state-machine framework.
+//! ステートマシンフレームワークのテストです。
 
 use propcheck::state_machine::{run_state_machine, StateMachine};
 use propcheck::{Arbitrary, Config};
@@ -10,9 +10,8 @@ enum VecOp {
     Clear,
 }
 
-/// Reference model: a system-under-test (real Vec) paired with an
-/// independent reference (also a Vec, but managed separately so a bug in
-/// either would surface as divergence).
+/// 参照モデル: テスト対象システム（実際のVec）と独立した参照（こちらもVecですが
+/// 別途管理されており、どちらかのバグがあれば不一致として顕在化します）の組合せ。
 struct VecAgainstReference;
 
 impl StateMachine for VecAgainstReference {
@@ -65,11 +64,11 @@ fn no_replay_cfg(seed: u64) -> Config {
 
 #[test]
 fn correct_implementation_passes_state_machine_test() {
-    // std::Vec matches our trivial reference (which is also std::Vec).
+    // std::Vecは、自明な参照（こちらもstd::Vec）と一致します。
     run_state_machine::<VecAgainstReference>("vec-against-itself", no_replay_cfg(1));
 }
 
-// --- A deliberately buggy SUT to verify the runner reports + shrinks ---
+// --- ランナーがレポートしshrinkすることを検証するための、意図的にバグのあるSUT ---
 
 #[derive(Arbitrary, Debug, Clone)]
 enum CounterOp {
@@ -96,7 +95,7 @@ impl StateMachine for BuggyCounter {
                 *expected += 1;
             }
             CounterOp::Decrement => {
-                // BUG: forgot to decrement the real counter.
+                // バグ: 実カウンタのデクリメントを忘れています。
                 *expected -= 1;
             }
             CounterOp::Reset => {
@@ -118,8 +117,8 @@ impl StateMachine for BuggyCounter {
 #[test]
 #[should_panic(expected = "FAILED")]
 fn buggy_counter_is_caught_and_shrunk() {
-    // The runner should panic with the failure message; the test passes
-    // by virtue of #[should_panic]. The shrunk sequence should be just
-    // [Decrement] (the minimal failing op).
+    // ランナーは失敗メッセージとともにpanicするはずです。このテストは
+    // #[should_panic]によって成功します。shrinkされたシーケンスは、
+    // 失敗する最小の操作である[Decrement]だけになるはずです。
     run_state_machine::<BuggyCounter>("buggy-counter", no_replay_cfg(2));
 }

@@ -1,5 +1,5 @@
-//! Runner variants driven by a [`Strategy`] instead of the type's
-//! [`Arbitrary`] impl.
+//! 型の [`Arbitrary`] 実装の代わりに [`Strategy`] によって駆動される
+//! ランナーのバリアントです。
 
 use std::fmt::Debug;
 
@@ -10,7 +10,7 @@ use crate::classify::{self, Classifications};
 use crate::panic_hook::SilentPanicHook;
 use crate::{run_prop, CaseOutcome, Config, IntoPropResult, Outcome, PropResult};
 
-/// Runs `prop` against values produced by `strategy`.
+/// `strategy` が生成した値に対して `prop` を実行します。
 pub fn forall_strategy<S, F, R>(strategy: S, prop: F) -> Outcome<S::Value>
 where
     S: Strategy,
@@ -21,7 +21,7 @@ where
     forall_strategy_with(strategy, Config::default(), prop)
 }
 
-/// Runs `prop` against values produced by `strategy` with a custom config.
+/// カスタム設定で `strategy` が生成した値に対して `prop` を実行します。
 pub fn forall_strategy_with<S, F, R>(
     strategy: S,
     cfg: Config,
@@ -42,7 +42,7 @@ where
     run_strategy_loop(&strategy, &cfg, &mut wrapped)
 }
 
-/// Like [`forall_strategy`] but panics on failure, suitable for `#[test]`.
+/// [`forall_strategy`] と同様ですが、失敗時に panic するため `#[test]` に適しています。
 pub fn run_strategy<S, F, R>(name: &str, strategy: S, prop: F)
 where
     S: Strategy,
@@ -53,7 +53,7 @@ where
     run_strategy_with(name, strategy, Config::default(), prop)
 }
 
-/// Like [`forall_strategy_with`] but panics on failure.
+/// [`forall_strategy_with`] と同様ですが、失敗時に panic します。
 pub fn run_strategy_with<S, F, R>(name: &str, strategy: S, cfg: Config, prop: F)
 where
     S: Strategy,
@@ -222,14 +222,14 @@ where
     }
 }
 
-/// Builds a [`one_of`](propcheck_core::strategy::one_of) strategy from a
-/// variadic list of sub-strategies, automatically boxing each so they may
-/// have different concrete types.
+/// 可変長のサブストラテジのリストから [`one_of`](propcheck_core::strategy::one_of)
+/// ストラテジを構築します。それぞれを自動的にボックス化するため、異なる具象型を
+/// 持つことができます。
 ///
-/// Two forms are supported:
+/// 2つの形式がサポートされています。
 ///
-/// - Uniform: `prop_oneof![strat_a, strat_b, strat_c]`
-/// - Weighted: `prop_oneof![1 => strat_a, 4 => strat_b]`
+/// - 一様: `prop_oneof![strat_a, strat_b, strat_c]`
+/// - 重み付き: `prop_oneof![1 => strat_a, 4 => strat_b]`
 #[macro_export]
 macro_rules! prop_oneof {
     ($($w:literal => $strat:expr),+ $(,)?) => {
@@ -244,8 +244,8 @@ macro_rules! prop_oneof {
     };
 }
 
-/// Builds a recursive-data strategy by stacking `inner` over `leaf` a
-/// fixed number of times. Useful for trees, ASTs, JSON-like values.
+/// `inner` を `leaf` の上に固定回数積み重ねることで、再帰的データの
+/// ストラテジを構築します。木、AST、JSON 風の値に便利です。
 ///
 /// ```ignore
 /// use propcheck::{prop_recursive, prop_oneof};
@@ -270,9 +270,9 @@ macro_rules! prop_oneof {
 /// };
 /// ```
 ///
-/// `leaf` and the result of `inner` must yield the same value type. The
-/// `inner` closure takes a `BoxedStrategy<T>` representing the next-deeper
-/// level and returns a `BoxedStrategy<T>` for the current level.
+/// `leaf` と `inner` の結果は同じ値の型を生成する必要があります。`inner`
+/// クロージャは、1つ深いレベルを表す `BoxedStrategy<T>` を受け取り、現在の
+/// レベル用の `BoxedStrategy<T>` を返します。
 #[macro_export]
 macro_rules! prop_recursive {
     (
@@ -284,16 +284,16 @@ macro_rules! prop_recursive {
     };
 }
 
-/// Convenience macro for `Strategy::filter` with a label hint included
-/// in the panic message if the filter rejects every candidate.
+/// `Strategy::filter` の便利マクロで、フィルタがすべての候補を拒否した
+/// 場合に panic メッセージへ含まれるラベルヒントを指定できます。
 ///
 /// ```ignore
 /// let s = prop_filter!("only even", any::<i32>(), |n| n % 2 == 0);
 /// ```
 ///
-/// Note: the label is currently informational only; rejecting candidates
-/// produce the standard `Filter: predicate rejected every candidate`
-/// message. Future versions may surface the label.
+/// 注意: ラベルは現在のところ情報提供のみで、候補が拒否されると標準の
+/// `Filter: predicate rejected every candidate` メッセージが出力されます。
+/// 将来のバージョンではラベルを表示する可能性があります。
 #[macro_export]
 macro_rules! prop_filter {
     ($label:expr, $strat:expr, $pred:expr $(,)?) => {{
@@ -305,8 +305,8 @@ macro_rules! prop_filter {
     };
 }
 
-/// Defines a function returning a composite [`Strategy`] built from named
-/// sub-strategies and a body expression.
+/// 名前付きのサブストラテジと本体式から構築された複合 [`Strategy`] を
+/// 返す関数を定義します。
 ///
 /// ```ignore
 /// use propcheck::strategy::str;
@@ -320,14 +320,15 @@ macro_rules! prop_filter {
 /// }
 /// ```
 ///
-/// Each binding `name in expr` uses `expr` as a [`Strategy`] (or any value
-/// implementing `Strategy`; ranges like `0..10` work via the `IntRange`
-/// strategy's blanket impls). The body must return the target value type.
+/// 各バインディング `name in expr` は `expr` を [`Strategy`]（または `Strategy`
+/// を実装する任意の値。`0..10` のような範囲は `IntRange` ストラテジの
+/// ブランケット impl 経由で動作します）として使用します。本体はターゲットの値の
+/// 型を返さなければなりません。
 ///
-/// Shrinking is not preserved across `prop_compose!` — the generated
-/// strategy shrinks by re-deriving from each sub-strategy's shrinks for
-/// each field independently. For complex domains write a manual `Strategy`
-/// impl if you need finer-grained control.
+/// shrink は `prop_compose!` をまたいで保持されません。生成されたストラテジは
+/// 各フィールドの shrink を独立に各サブストラテジから再導出して shrink します。
+/// 複雑な領域でより細かい制御が必要な場合は、手動で `Strategy` 実装を
+/// 書いてください。
 #[macro_export]
 macro_rules! prop_compose {
     (
@@ -349,10 +350,9 @@ macro_rules! prop_compose {
     };
 }
 
-/// Internal: a strategy whose `new_value` is a boxed closure and whose
-/// `shrink_value` returns nothing (composed strategies don't have a
-/// natural shrink path without preserving the input variables). Used by
-/// [`prop_compose!`].
+/// 内部用: `new_value` がボックス化されたクロージャで、`shrink_value` が
+/// 何も返さないストラテジです（複合ストラテジは入力変数を保持しないと
+/// 自然な shrink 経路を持ちません）。[`prop_compose!`] で使用されます。
 #[doc(hidden)]
 pub struct __ComposedStrategy<T> {
     pub builder: ComposedBuilder<T>,
@@ -365,8 +365,8 @@ pub type ComposedBuilder<T> =
 impl<T: Clone + std::fmt::Debug + 'static> propcheck_core::Strategy for __ComposedStrategy<T> {
     type Value = T;
     fn new_value<R: propcheck_core::Rng + ?Sized>(&self, rng: &mut R, size: usize) -> T {
-        // Use the same sized-wrapper trick as BoxedStrategy: wrap rng so
-        // it can be coerced to `&mut dyn Rng`.
+        // BoxedStrategy と同じ sized ラッパーのトリックを使用します。
+        // `&mut dyn Rng` に強制変換できるよう rng をラップします。
         struct W<'a, R: propcheck_core::Rng + ?Sized> {
             inner: &'a mut R,
         }

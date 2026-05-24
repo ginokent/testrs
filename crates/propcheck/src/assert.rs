@@ -1,50 +1,51 @@
-//! Assertion macros and the structured panic payloads they emit.
+//! アサーションマクロと、それらが発行する構造化された panic ペイロードです。
 //!
-//! The runner catches `panic_any` payloads of these specific types and
-//! reports rich failure messages, discards, or skips instead of the
-//! default "panicked: …" string.
+//! ランナーはこれらの特定の型の `panic_any` ペイロードを捕捉し、デフォルトの
+//! "panicked: …" 文字列の代わりに、詳細な失敗メッセージ、discard、skip を
+//! 報告します。
 //!
-//! Three categories are distinguished:
+//! 3つのカテゴリが区別されます。
 //!
-//! - [`PropAssertFailure`] — the property's invariant was violated. This
-//!   is a real bug. Reported as a failure with the assertion message,
-//!   plus the surrounding `prop_with_context!` stack if any.
-//! - [`PropDiscard`] — the input didn't satisfy a precondition. Reported
-//!   as a discard; the runner counts these against `Config::max_discards`
-//!   because too many means your generator isn't producing useful inputs.
-//! - [`PropSkip`] — the test couldn't run because the environment isn't
-//!   ready (missing env var, IO failure, feature not enabled). Reported
-//!   as a skip; counted against `Config::max_skips` separately so a flaky
-//!   env doesn't masquerade as a bad generator.
+//! - [`PropAssertFailure`] — プロパティの invariant が違反されました。これは
+//!   実際のバグです。アサーションメッセージと、周囲に `prop_with_context!`
+//!   スタックがあればそれを伴う失敗として報告されます。
+//! - [`PropDiscard`] — 入力が前提条件を満たしませんでした。discard として
+//!   報告されます。ランナーはこれらを `Config::max_discards` にカウントします。
+//!   なぜなら、過剰な場合はジェネレータが有用な入力を生成していないことを
+//!   意味するからです。
+//! - [`PropSkip`] — 環境が準備できていない（環境変数がない、IO 失敗、機能が
+//!   有効化されていない）ためにテストを実行できませんでした。skip として
+//!   報告されます。`Config::max_skips` に別途カウントされ、不安定な環境を
+//!   ジェネレータの不良に偽装させません。
 
 use std::cell::RefCell;
 
-/// Panic payload type emitted by `prop_assert!`, `prop_assert_eq!`,
-/// `prop_assert_ne!`, and `prop_assert_matches!`. Caught by the runner to
-/// surface the message.
+/// `prop_assert!`、`prop_assert_eq!`、`prop_assert_ne!`、`prop_assert_matches!`
+/// が発行する panic ペイロード型です。ランナーがメッセージを表示するために
+/// 捕捉します。
 #[derive(Debug, Clone)]
 pub struct PropAssertFailure {
-    /// Pre-formatted failure message including file/line and any active
-    /// `prop_with_context!` stack.
+    /// ファイル/行番号と、アクティブな `prop_with_context!` スタックを
+    /// 含む、フォーマット済みの失敗メッセージです。
     pub message: String,
 }
 
-/// Panic payload type emitted by `prop_assume!`. Caught by the runner to
-/// discard the current case rather than fail it.
+/// `prop_assume!` が発行する panic ペイロード型です。ランナーが現在の
+/// ケースを失敗させる代わりに discard するために捕捉します。
 #[derive(Debug, Clone, Copy)]
 pub struct PropDiscard;
 
-/// Panic payload type emitted by `prop_skip!`. Like discard but used
-/// when the *environment* (not the input) prevents the test from running.
-/// Counted separately from discards so the runner can tell a broken
-/// environment from a noisy generator.
+/// `prop_skip!` が発行する panic ペイロード型です。discard と似ていますが、
+/// （入力ではなく）*環境* がテストの実行を妨げる場合に使用されます。discard
+/// とは別途カウントされるため、ランナーは壊れた環境とノイズの多い
+/// ジェネレータを区別できます。
 #[derive(Debug, Clone)]
 pub struct PropSkip {
-    /// Reason the test was skipped.
+    /// テストがスキップされた理由です。
     pub message: String,
 }
 
-// --- with_context! support --------------------------------------------
+// --- with_context! サポート -------------------------------------------
 
 thread_local! {
     static CONTEXT_STACK: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
@@ -74,9 +75,9 @@ pub fn __current_context() -> String {
     })
 }
 
-/// Pushes a context frame for the duration of `body`. Any assertion that
-/// fails inside `body` includes the formatted context string in its
-/// reported message.
+/// `body` の実行中、コンテキストフレームをプッシュします。`body` 内で失敗した
+/// 任意のアサーションは、報告されるメッセージにフォーマットされたコンテキスト
+/// 文字列を含めます。
 ///
 /// ```ignore
 /// run("complex flow", |state: &State| {
@@ -103,11 +104,11 @@ macro_rules! prop_with_context {
     }};
 }
 
-// --- prop_assert! family ----------------------------------------------
+// --- prop_assert! ファミリ --------------------------------------------
 
-/// Assert that a boolean condition holds within a property body. On
-/// failure, panics with a [`PropAssertFailure`] payload that the runner
-/// captures and reports.
+/// プロパティ本体内で真偽条件が成立することをアサートします。失敗時には、
+/// ランナーが捕捉して報告する [`PropAssertFailure`] ペイロードで panic
+/// します。
 ///
 /// ```ignore
 /// prop_assert!(v.len() <= cap, "expected len <= {cap}, got {}", v.len());
@@ -142,8 +143,8 @@ macro_rules! prop_assert {
     };
 }
 
-/// Assert that two values are equal. On failure, both sides are included
-/// in the failure message, just like `assert_eq!`.
+/// 2つの値が等しいことをアサートします。失敗時には、`assert_eq!` と同様に
+/// 両辺が失敗メッセージに含まれます。
 #[macro_export]
 macro_rules! prop_assert_eq {
     ($left:expr, $right:expr $(,)?) => {{
@@ -166,7 +167,7 @@ macro_rules! prop_assert_eq {
     }};
 }
 
-/// Assert that two values are not equal.
+/// 2つの値が等しくないことをアサートします。
 #[macro_export]
 macro_rules! prop_assert_ne {
     ($left:expr, $right:expr $(,)?) => {{
@@ -188,13 +189,13 @@ macro_rules! prop_assert_ne {
     }};
 }
 
-/// Assert that two floating-point values are within `epsilon` of each
-/// other. Use this instead of `prop_assert_eq!` when exact equality is
-/// inappropriate (rounding error, transcendental functions, etc.).
+/// 2つの浮動小数点数値が互いに `epsilon` の範囲内であることをアサートします。
+/// 完全な等価性が不適切な場合（丸め誤差、超越関数など）に、`prop_assert_eq!`
+/// の代わりに使用してください。
 ///
-/// Both sides must support `Sub`, `Output: Into<f64>`-style absolute-value
-/// computation; in practice the macro works for any `T` with `-` and
-/// `.abs()` returning a comparable value.
+/// 両辺は `Sub`、`Output: Into<f64>` スタイルの絶対値計算をサポートする必要が
+/// あります。実用上、このマクロは `-` と比較可能な値を返す `.abs()` を持つ
+/// 任意の `T` で動作します。
 ///
 /// ```ignore
 /// prop_assert_close!(my_sin(x), x.sin(), epsilon = 1e-9);
@@ -223,8 +224,8 @@ macro_rules! prop_assert_close {
     }};
 }
 
-/// Assert that a value matches a pattern. Supports optional `if` guards
-/// just like `std::matches!`.
+/// 値がパターンにマッチすることをアサートします。`std::matches!` と同様に
+/// オプションの `if` ガードをサポートします。
 ///
 /// ```ignore
 /// prop_assert_matches!(result, Ok(Token::Number(n)) if n > 0);
@@ -270,13 +271,13 @@ macro_rules! prop_assert_matches {
 
 // --- prop_assume! / prop_skip! ----------------------------------------
 
-/// Discard the current case if the condition is false. The runner will
-/// generate a fresh input and try again. If too many cases are discarded
-/// in a row, the run is aborted with a "noisy generator" diagnostic.
+/// 条件が false の場合に現在のケースを discard します。ランナーは新しい
+/// 入力を生成して再試行します。連続して discard されるケースが多すぎる
+/// 場合、実行は「ノイズの多いジェネレータ」診断とともに中止されます。
 ///
-/// Use this for *input* preconditions ("only run when the list is
-/// sorted"). For *environment* preconditions ("only run when $FOO is set"),
-/// prefer [`prop_skip!`].
+/// これは *入力* の前提条件（「リストがソートされている場合のみ実行する」）
+/// に使用してください。*環境* の前提条件（「$FOO が設定されている場合のみ
+/// 実行する」）には [`prop_skip!`] を推奨します。
 #[macro_export]
 macro_rules! prop_assume {
     ($cond:expr $(,)?) => {
@@ -286,9 +287,9 @@ macro_rules! prop_assume {
     };
 }
 
-/// Skip the current case because the *environment* can't satisfy it
-/// (missing config, optional feature off, transient IO failure). Counted
-/// separately from `prop_assume!` discards.
+/// *環境* が条件を満たせない（設定がない、オプション機能が無効、一時的な
+/// IO 失敗）ために現在のケースをスキップします。`prop_assume!` の discard
+/// とは別途カウントされます。
 ///
 /// ```ignore
 /// let db_url = match std::env::var("DB_URL") {

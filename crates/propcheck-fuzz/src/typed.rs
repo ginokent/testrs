@@ -1,21 +1,22 @@
-//! Typed-input fuzzing built on top of [`crate::fuzz`].
+//! [`crate::fuzz`] の上に構築された、型付き入力のファジングです。
 //!
-//! The byte-oriented fuzzer mutates `&[u8]` directly, which is awkward for
-//! testing APIs that take structured input. [`fuzz_typed`] derives a
-//! seedable PRNG from the mutated bytes and then asks `T: Arbitrary` for
-//! a value, giving you mutation-driven coverage of any `Arbitrary` type.
+//! バイト指向のファザーは `&[u8]` を直接ミューテートするため、構造化された
+//! 入力を取る API のテストには扱いづらいです。[`fuzz_typed`] はミューテート
+//! されたバイト列からシード可能な PRNG を導出し、`T: Arbitrary` に値を要求
+//! することで、任意の `Arbitrary` 型に対してミューテーション駆動のカバレッジ
+//! を提供します。
 
 use propcheck_core::{Arbitrary, XorShift64};
 
 use crate::{fuzz, FuzzConfig, FuzzReport};
 
-/// Tunables specific to typed fuzzing.
+/// 型付きファジング固有の調整可能パラメータです。
 #[derive(Debug, Clone)]
 pub struct TypedFuzzConfig {
-    /// Underlying byte-fuzzer config (controls iterations, seed, corpus, …).
+    /// 基盤となるバイトファザーの設定（イテレーション数、シード、コーパス等を制御します）。
     pub inner: FuzzConfig,
-    /// Size hint passed to `T::arbitrary`. Larger values produce larger /
-    /// deeper structures.
+    /// `T::arbitrary` に渡されるサイズヒントです。大きな値はより大きい /
+    /// より深い構造を生成します。
     pub size: usize,
 }
 
@@ -28,10 +29,10 @@ impl Default for TypedFuzzConfig {
     }
 }
 
-/// Fuzzes a target taking a typed value. Each byte buffer the mutator
-/// produces is interpreted as the seed (plus auxiliary entropy) of a
-/// [`XorShift64`] PRNG, which then drives `T::arbitrary` to construct the
-/// value handed to `target`.
+/// 型付きの値を取るターゲットをファジングします。ミューテーターが生成する
+/// 各バイトバッファは [`XorShift64`] PRNG のシード（および補助エントロピー）
+/// として解釈され、その PRNG が `T::arbitrary` を駆動して `target` に渡される
+/// 値を構築します。
 ///
 /// ```no_run
 /// use propcheck_fuzz::{fuzz_typed, TypedFuzzConfig};
@@ -57,18 +58,18 @@ where
     })
 }
 
-/// Hashes a byte slice into a u64 seed using a small mixing function. The
-/// goal is just that different byte sequences map to different seeds; no
-/// cryptographic property is needed.
+/// 小さなミキシング関数を用いてバイトスライスを u64 のシードへハッシュします。
+/// 目的は単に、異なるバイト列が異なるシードへマップされることだけであり、
+/// 暗号学的な性質は必要としません。
 fn seed_from_bytes(bytes: &[u8]) -> u64 {
-    // FNV-1a-style mix, then a final avalanche step. Empty input yields a
-    // fixed non-zero seed because XorShift64 dislikes 0.
+    // FNV-1a 風のミックスを行い、その後最終的なアバランチステップを適用します。
+    // XorShift64 は 0 を嫌うため、空入力に対しては固定の非ゼロシードを返します。
     let mut h: u64 = 0xcbf2_9ce4_8422_2325;
     for &b in bytes {
         h ^= b as u64;
         h = h.wrapping_mul(0x100_0000_01b3);
     }
-    // Avalanche
+    // アバランチ
     h ^= h >> 33;
     h = h.wrapping_mul(0xff51_afd7_ed55_8ccd);
     h ^= h >> 33;
@@ -85,8 +86,8 @@ mod tests {
 
     #[test]
     fn finds_typed_crash() {
-        // Bug: panic when generated u32 happens to be small and even.
-        // Using Arbitrary on u32 is fully driven by the seed bytes.
+        // バグ：生成された u32 が偶然小さく偶数だった場合に panic します。
+        // u32 への Arbitrary の利用は完全にシードバイトによって駆動されます。
         let cfg = TypedFuzzConfig {
             inner: FuzzConfig {
                 iterations: 100_000,
