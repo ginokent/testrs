@@ -1,8 +1,8 @@
-//! Property-based test runner.
+//! プロパティベーステストのランナーです。
 //!
-//! Use [`run`] from inside a `#[test]` function (or write `#[propcheck]` on
-//! a free function for the same effect with less boilerplate) to assert a
-//! property over many randomly generated inputs:
+//! `#[test]` 関数の内部から [`run`] を使う（あるいは同じ効果をボイラープレート
+//! を減らして得るために自由関数に `#[propcheck]` を書く）ことで、ランダムに
+//! 生成された多数の入力に対してプロパティを表明できます。
 //!
 //! ```
 //! use propcheck::{run, prop_assert_eq};
@@ -13,22 +13,22 @@
 //! });
 //! ```
 //!
-//! Inside a property body you can use:
+//! プロパティ本体の中では以下が使えます。
 //!
-//! - [`prop_assert!`], [`prop_assert_eq!`], [`prop_assert_ne!`] for
-//!   assertions with rich failure messages.
-//! - [`prop_assume!`] to discard cases that don't satisfy a precondition.
-//! - [`classify!`] to record per-case labels; the runner aggregates them
-//!   into a percentage table reported alongside the pass/fail summary.
+//! - [`prop_assert!`]、[`prop_assert_eq!`]、[`prop_assert_ne!`] は
+//!   詳細な失敗メッセージ付きのアサーションを提供します。
+//! - [`prop_assume!`] は前提条件を満たさないケースを破棄します。
+//! - [`classify!`] はケースごとのラベルを記録します。ランナーはそれらを
+//!   集計し、合格／失敗のサマリーと一緒にパーセンテージ表として報告します。
 //!
-//! Property bodies may return any type that implements [`IntoPropResult`]:
-//! `bool`, `()`, `Result<(), E>`, or [`PropResult`] directly. This lets
-//! you use the `?` operator inside the property body.
+//! プロパティ本体は [`IntoPropResult`] を実装する任意の型を返せます。
+//! 具体的には `bool`、`()`、`Result<(), E>`、または [`PropResult`] その
+//! ものです。これによりプロパティ本体の中で `?` 演算子を使えます。
 //!
-//! Failure output includes the seed of the run so it can be reproduced
-//! deterministically by setting the `PROPCHECK_SEED` env var. Failing
-//! seeds are also persisted to `target/propcheck-regressions/<name>.txt`
-//! and replayed on subsequent runs.
+//! 失敗時の出力には実行で使用したシードが含まれているため、`PROPCHECK_SEED`
+//! 環境変数を設定することで決定的に再現できます。失敗したシードは
+//! `target/propcheck-regressions/<name>.txt` にも永続化され、以降の実行
+//! 時に再生されます。
 
 use std::any::Any;
 use std::env;
@@ -53,8 +53,8 @@ pub use assert::{__current_context, __pop_context, __push_context};
 pub use assert::{PropAssertFailure, PropDiscard, PropSkip};
 pub use classify::Classifications;
 pub use propcheck_core::strategy;
-// `Arbitrary` as both the trait (from propcheck-core, type namespace) and the
-// derive macro (from propcheck-derive, macro namespace).
+// `Arbitrary` をトレイト（propcheck-core から、型の名前空間）および
+// derive マクロ（propcheck-derive から、マクロの名前空間）の両方として公開します。
 pub use propcheck_derive::{propcheck, Arbitrary};
 #[doc(hidden)]
 pub use strategy_runner::__ComposedStrategy;
@@ -63,24 +63,26 @@ pub use strategy_runner::{forall_strategy, forall_strategy_with, run_strategy, r
 use panic_hook::SilentPanicHook;
 
 // ---------------------------------------------------------------------------
-// IntoPropResult: lets properties return bool, (), Result, or PropResult.
+// IntoPropResult: プロパティが bool、()、Result、または PropResult を返せる
+// ようにします。
 // ---------------------------------------------------------------------------
 
-/// The outcome of a single property case before the runner classifies it.
+/// ランナーが分類する前の、単一のプロパティケースの結果です。
 #[derive(Debug)]
 pub enum PropResult {
-    /// Case passed.
+    /// ケースが合格しました。
     Pass,
-    /// Case failed; carries a human-readable reason.
+    /// ケースが失敗しました。人間が読める理由を伴います。
     Fail(String),
-    /// Case discarded (precondition not met); does not count toward `cases`.
+    /// ケースが破棄されました（前提条件を満たしませんでした）。`cases` には
+    /// カウントされません。
     Discard,
 }
 
-/// Trait that lets property bodies return any of `bool`, `()`,
-/// `Result<(), E>`, or [`PropResult`] without an explicit conversion.
+/// プロパティ本体が `bool`、`()`、`Result<(), E>`、または [`PropResult`] の
+/// いずれかを明示的な変換なしに返せるようにするトレイトです。
 pub trait IntoPropResult {
-    /// Converts `self` into a [`PropResult`].
+    /// `self` を [`PropResult`] に変換します。
     fn into_prop_result(self) -> PropResult;
 }
 
@@ -119,48 +121,49 @@ impl<E: std::fmt::Debug> IntoPropResult for Result<(), E> {
 // Config
 // ---------------------------------------------------------------------------
 
-/// Tunables for a property-based test run.
+/// プロパティベーステスト実行の調整可能なパラメータです。
 #[derive(Debug, Clone)]
 pub struct Config {
-    /// Target number of *passing* cases to execute.
+    /// 実行する*合格*ケースの目標数です。
     pub cases: usize,
-    /// PRNG seed. Defaults to `PROPCHECK_SEED` env var or wall-clock entropy.
+    /// PRNG シードです。デフォルトは `PROPCHECK_SEED` 環境変数、または
+    /// 壁時計のエントロピーです。
     pub seed: u64,
-    /// Maximum number of shrink steps applied to a failing case.
+    /// 失敗ケースに対して適用される shrink ステップの最大数です。
     pub max_shrinks: usize,
-    /// Upper bound on the size hint passed to `Arbitrary::arbitrary`.
+    /// `Arbitrary::arbitrary` に渡される size ヒントの上限です。
     pub max_size: usize,
-    /// Maximum total `prop_assume!` discards allowed before the run is
-    /// aborted. Defaults to `cases * 10`.
+    /// 実行が中止される前に許容される `prop_assume!` の破棄の合計上限です。
+    /// デフォルトは `cases * 10` です。
     pub max_discards: usize,
-    /// Maximum total `prop_skip!` skips allowed before the run is aborted.
-    /// Counted separately from discards so a flaky environment doesn't
-    /// look like a noisy generator. Defaults to `cases * 10`.
+    /// 実行が中止される前に許容される `prop_skip!` のスキップの合計上限です。
+    /// 不安定な環境がノイズの多いジェネレータのように見えないよう、破棄とは
+    /// 別にカウントされます。デフォルトは `cases * 10` です。
     pub max_skips: usize,
-    /// If `true`, the global panic hook is silenced while the run executes
-    /// so failing cases don't spam the terminal. Refcounted internally so
-    /// concurrent runners share a single hook installation.
+    /// `true` の場合、実行中はグローバル panic フックを無音化し、失敗ケース
+    /// が端末をスパムしないようにします。内部で参照カウントされているため、
+    /// 並行するランナーは単一のフックインストールを共有します。
     pub silence_panic_hook: bool,
-    /// If `true`, [`run`] / [`run_with`] persist failing seeds under
-    /// `target/propcheck-regressions/<name>.txt` and replay them at the
-    /// start of subsequent runs.
+    /// `true` の場合、[`run`] / [`run_with`] は失敗シードを
+    /// `target/propcheck-regressions/<name>.txt` に永続化し、以降の実行
+    /// の最初に再生します。
     pub regression_replay: bool,
-    /// Shrinking strategy. Defaults to [`ShrinkMode::Greedy`] — accept the
-    /// first failing candidate at each step. [`ShrinkMode::Exhaustive`]
-    /// evaluates every candidate and accepts only the smallest failing
-    /// one (by `Debug` length as a cheap heuristic), at higher cost.
+    /// 縮小戦略です。デフォルトは [`ShrinkMode::Greedy`] で、各ステップで
+    /// 最初に失敗した候補を受け入れます。[`ShrinkMode::Exhaustive`] は
+    /// すべての候補を評価し、最も小さい（安価なヒューリスティックとして
+    /// `Debug` の長さで判断）失敗候補のみを受け入れます。コストは高くなります。
     pub shrink_mode: ShrinkMode,
 }
 
-/// How the shrinker explores candidates.
+/// shrinker が候補を探索する方法です。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ShrinkMode {
-    /// Accept the first candidate that still fails (faster, typical
-    /// QuickCheck behavior).
+    /// 依然として失敗する最初の候補を受け入れます（高速で、典型的な
+    /// QuickCheck の挙動です）。
     Greedy,
-    /// At each step, evaluate every candidate and accept the smallest
-    /// (by `Debug` representation length) that still fails. Slower but
-    /// often produces tighter counterexamples for nested data.
+    /// 各ステップで、すべての候補を評価し、依然として失敗するもののうち
+    /// （`Debug` 表現の長さで）最も小さいものを受け入れます。低速ですが、
+    /// ネストされたデータに対してはより厳密な反例を生み出すことが多いです。
     Exhaustive,
 }
 
@@ -194,17 +197,17 @@ fn env_seed() -> u64 {
 // Outcome
 // ---------------------------------------------------------------------------
 
-/// Outcome of a property test.
+/// プロパティテストの結果です。
 #[derive(Debug)]
 pub enum Outcome<A> {
-    /// All required cases passed (possibly after some discards or skips).
+    /// すべての必要なケースが合格しました（破棄やスキップを経た場合もあります）。
     Passed {
         cases: usize,
         discarded: usize,
         skipped: usize,
         classifications: Classifications,
     },
-    /// A case failed.
+    /// あるケースが失敗しました。
     Failed {
         original: A,
         shrunk: A,
@@ -215,7 +218,7 @@ pub enum Outcome<A> {
         skipped: usize,
         classifications: Classifications,
     },
-    /// Run aborted before completion (too many discards or skips).
+    /// 実行が完了前に中止されました（破棄またはスキップが多すぎる）。
     Aborted {
         reason: String,
         cases: usize,
@@ -227,22 +230,22 @@ pub enum Outcome<A> {
 }
 
 impl<A> Outcome<A> {
-    /// `true` if the run completed without finding a failure.
+    /// 失敗を見つけずに実行が完了した場合に `true` を返します。
     pub fn is_passed(&self) -> bool {
         matches!(self, Outcome::Passed { .. })
     }
 
-    /// `true` if the run found a failing case.
+    /// 実行が失敗ケースを見つけた場合に `true` を返します。
     pub fn is_failed(&self) -> bool {
         matches!(self, Outcome::Failed { .. })
     }
 
-    /// `true` if the run was aborted before completion.
+    /// 実行が完了前に中止された場合に `true` を返します。
     pub fn is_aborted(&self) -> bool {
         matches!(self, Outcome::Aborted { .. })
     }
 
-    /// The failure message, if any.
+    /// 失敗メッセージがあれば返します。
     pub fn failure_message(&self) -> Option<&str> {
         match self {
             Outcome::Failed { message, .. } => Some(message),
@@ -250,7 +253,7 @@ impl<A> Outcome<A> {
         }
     }
 
-    /// The minimized counterexample, if any.
+    /// 最小化された反例があれば返します。
     pub fn shrunk(&self) -> Option<&A> {
         match self {
             Outcome::Failed { shrunk, .. } => Some(shrunk),
@@ -258,7 +261,7 @@ impl<A> Outcome<A> {
         }
     }
 
-    /// The original (unshrunk) failing input, if any.
+    /// 元の（縮小されていない）失敗入力があれば返します。
     pub fn original(&self) -> Option<&A> {
         match self {
             Outcome::Failed { original, .. } => Some(original),
@@ -266,8 +269,8 @@ impl<A> Outcome<A> {
         }
     }
 
-    /// Number of cases that ran the property to completion successfully.
-    /// For a failed run, this is the index of the failing case minus one.
+    /// プロパティを正常に最後まで実行したケースの数です。
+    /// 失敗した実行の場合、これは失敗ケースのインデックスから 1 を引いた値です。
     pub fn cases(&self) -> usize {
         match self {
             Outcome::Passed { cases, .. } => *cases,
@@ -276,7 +279,7 @@ impl<A> Outcome<A> {
         }
     }
 
-    /// Number of `prop_assume!` discards encountered.
+    /// 発生した `prop_assume!` の破棄回数です。
     pub fn discarded(&self) -> usize {
         match self {
             Outcome::Passed { discarded, .. }
@@ -285,7 +288,7 @@ impl<A> Outcome<A> {
         }
     }
 
-    /// Number of `prop_skip!` skips encountered.
+    /// 発生した `prop_skip!` のスキップ回数です。
     pub fn skipped(&self) -> usize {
         match self {
             Outcome::Passed { skipped, .. }
@@ -294,7 +297,7 @@ impl<A> Outcome<A> {
         }
     }
 
-    /// Seed used for the run.
+    /// 実行に使用されたシードです。
     pub fn seed(&self) -> Option<u64> {
         match self {
             Outcome::Failed { seed, .. } | Outcome::Aborted { seed, .. } => Some(*seed),
@@ -302,7 +305,7 @@ impl<A> Outcome<A> {
         }
     }
 
-    /// Aggregated `classify!` labels collected during the run.
+    /// 実行中に収集された `classify!` ラベルの集計です。
     pub fn classifications(&self) -> &Classifications {
         match self {
             Outcome::Passed {
@@ -319,10 +322,10 @@ impl<A> Outcome<A> {
 }
 
 // ---------------------------------------------------------------------------
-// Public entry points
+// 公開エントリーポイント
 // ---------------------------------------------------------------------------
 
-/// Runs `prop` against [`Config::default`] and returns the [`Outcome`].
+/// [`Config::default`] に対して `prop` を実行し、[`Outcome`] を返します。
 pub fn forall<A, F, R>(prop: F) -> Outcome<A>
 where
     A: Arbitrary,
@@ -332,7 +335,7 @@ where
     forall_with(Config::default(), prop)
 }
 
-/// Runs `prop` with a custom [`Config`] and returns the [`Outcome`].
+/// カスタム [`Config`] で `prop` を実行し、[`Outcome`] を返します。
 pub fn forall_with<A, F, R>(cfg: Config, mut prop: F) -> Outcome<A>
 where
     A: Arbitrary,
@@ -348,8 +351,8 @@ where
     run_loop(&cfg, &mut wrapped, &[])
 }
 
-/// Convenience wrapper that converts [`Outcome::Failed`] into a `panic!`,
-/// making it suitable for use directly inside `#[test]` functions.
+/// [`Outcome::Failed`] を `panic!` に変換する便利なラッパーで、
+/// `#[test]` 関数の中で直接使うのに適しています。
 pub fn run<A, F, R>(name: &str, prop: F)
 where
     A: Arbitrary,
@@ -359,7 +362,7 @@ where
     run_with(name, Config::default(), prop)
 }
 
-/// Same as [`run`] but takes an explicit [`Config`].
+/// [`run`] と同じですが、明示的な [`Config`] を取ります。
 pub fn run_with<A, F, R>(name: &str, cfg: Config, mut prop: F)
 where
     A: Arbitrary,
@@ -386,7 +389,7 @@ where
     let outcome = run_loop(&cfg, &mut wrapped, &regression_seeds);
     drop(_guard);
 
-    // Persist new failing seed for future runs.
+    // 今後の実行のために新しい失敗シードを永続化します。
     if let Outcome::Failed {
         seed: failed_seed, ..
     } = &outcome
@@ -460,7 +463,7 @@ where
 }
 
 // ---------------------------------------------------------------------------
-// Inner loop
+// 内部ループ
 // ---------------------------------------------------------------------------
 
 fn run_loop<A, F>(cfg: &Config, prop: &mut F, regression_seeds: &[u64]) -> Outcome<A>
@@ -468,7 +471,7 @@ where
     A: Arbitrary,
     F: FnMut(&A) -> PropResult,
 {
-    // 1. Replay regression seeds first.
+    // 1. まず回帰シードを再生します。
     for &rseed in regression_seeds {
         let mut rng = XorShift64::seed_from_u64(rseed);
         let size = (cfg.max_size / 2).max(1);
@@ -492,7 +495,7 @@ where
         let _ = classify::take_current();
     }
 
-    // 2. Main loop.
+    // 2. メインループ。
     let mut rng = XorShift64::seed_from_u64(cfg.seed);
     let target_cases = cfg.cases.max(1);
     let mut passed = 0usize;
@@ -570,8 +573,8 @@ where
     }
 }
 
-/// Result of running the property on one case.
-#[allow(dead_code)] // `Skip`'s message is informational; surfaced through skip count.
+/// 1 つのケースに対してプロパティを実行した結果です。
+#[allow(dead_code)] // `Skip` のメッセージは情報提供用で、スキップ数を通じて表面化します。
 pub(crate) enum CaseOutcome {
     Pass,
     Fail(String),
@@ -640,8 +643,8 @@ where
                 return current;
             }
             ShrinkMode::Exhaustive => {
-                // Evaluate every candidate (up to budget); keep the
-                // smallest-by-Debug-length failing one.
+                // すべての候補を評価し（バジェットの範囲内で）、Debug の長さで
+                // 最も小さい失敗候補を保持します。
                 let mut best: Option<(usize, A)> = None;
                 for c in candidates {
                     if attempts >= max {
@@ -700,7 +703,7 @@ mod tests {
 
     #[test]
     fn unit_return_means_pass() {
-        // No `prop_assert!` and no return value should be Pass.
+        // `prop_assert!` がなく戻り値もない場合は Pass となるはずです。
         let out: Outcome<u32> = forall_with(cfg(5), |_n: &u32| {});
         match out {
             Outcome::Passed { cases, .. } => assert_eq!(cases, 200),

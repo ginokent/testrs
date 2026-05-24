@@ -1,5 +1,5 @@
-//! Tests for the Batch 1+2 additions: string strategies, prop_compose!,
-//! prop_assert_matches!, prop_skip!, prop_with_context!, Outcome accessors.
+//! Batch 1+2で追加された機能のテスト: 文字列strategy、prop_compose!、
+//! prop_assert_matches!、prop_skip!、prop_with_context!、Outcomeのアクセサ。
 
 use propcheck::strategy::{int_range, str};
 use propcheck::{
@@ -50,7 +50,7 @@ fn prop_assert_matches_supports_guard() {
         prop_assert_matches!(result, Ok(x) if x < 200);
         true
     });
-    // u8 max is 255, so we should hit a case with n >= 200.
+    // u8の最大値は255なので、n >= 200となるケースに必ず到達するはずです。
     assert!(outcome.is_failed());
 }
 
@@ -166,9 +166,9 @@ fn ascii_alphanumeric_strategy_drives_property() {
 
 #[test]
 fn string_strategy_shrinks_to_canonical_chars() {
-    // Property: "no generated string contains '5'" — fails almost
-    // immediately because the digit set includes 5. Shrunk value should
-    // be the minimal string containing 5: "5".
+    // プロパティ: 「生成されるどの文字列にも '5' が含まれない」 — 数字集合に
+    // 5 が含まれるため、ほぼ即座に失敗します。shrink された値は、5 を含む
+    // 最小の文字列、すなわち "5" となるはずです。
     let outcome =
         forall_strategy_with(str::ascii_digits(1..30), no_replay_cfg(10), |s: &String| {
             !s.contains('5')
@@ -217,7 +217,7 @@ fn prop_compose_strategy_produces_valid_users() {
 
 #[test]
 fn prop_compose_can_drive_run_strategy() {
-    // Just verify the strategy plugs into the runner.
+    // strategyがランナーに組み込めることを確認するだけのテストです。
     run_strategy_with(
         "compose drives runner",
         user_strategy(),

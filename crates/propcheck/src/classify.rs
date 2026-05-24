@@ -1,8 +1,8 @@
-//! Per-case classification statistics and the [`classify!`] macro.
+//! ケースごとの classification 統計と [`classify!`] マクロを提供します。
 //!
-//! The macro records a label for the current test case when its condition
-//! is true. The runner clears the recorded labels before each case and
-//! aggregates them across all cases into a [`Classifications`] report.
+//! このマクロは、条件が真である場合に現在のテストケースに対してラベルを記録します。
+//! runner は各ケースの前に記録済みのラベルをクリアし、全ケースにわたって集計して
+//! [`Classifications`] レポートにまとめます。
 
 use std::cell::RefCell;
 use std::collections::BTreeMap;
@@ -11,7 +11,7 @@ thread_local! {
     static CURRENT: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
 }
 
-/// Aggregated label counts for a run.
+/// 1 回の実行における集計されたラベルのカウントです。
 #[derive(Debug, Default, Clone)]
 pub struct Classifications {
     pub(crate) counts: BTreeMap<String, usize>,
@@ -19,23 +19,22 @@ pub struct Classifications {
 }
 
 impl Classifications {
-    /// Returns the number of cases that recorded each label.
+    /// 各ラベルを記録したケースの数を返します。
     pub fn counts(&self) -> &BTreeMap<String, usize> {
         &self.counts
     }
 
-    /// Total number of cases observed (including those that recorded no
-    /// labels).
+    /// 観測されたケースの総数（ラベルを記録しなかったケースを含む）です。
     pub fn total(&self) -> usize {
         self.total
     }
 
-    /// `true` if no `classify!` calls occurred during the run.
+    /// 実行中に `classify!` の呼び出しが一度も発生しなかった場合に `true` を返します。
     pub fn is_empty(&self) -> bool {
         self.counts.is_empty()
     }
 
-    /// Formats the classifications as a percentage table sorted by label.
+    /// classification をラベル順にソートした割合の表として整形します。
     pub fn render(&self) -> String {
         if self.counts.is_empty() {
             return String::new();
@@ -55,8 +54,8 @@ impl Classifications {
         out
     }
 
-    /// Merges another report's counts into this one. Both `total` and per-
-    /// label counts are summed.
+    /// 別のレポートのカウントをこのレポートにマージします。`total` とラベル
+    /// ごとのカウントの両方が合算されます。
     pub(crate) fn merge_case(&mut self, labels: Vec<String>) {
         self.total += 1;
         for label in labels {
@@ -65,18 +64,18 @@ impl Classifications {
     }
 }
 
-/// Internal: called by the runner before each case to reset the buffer.
+/// 内部用: 各ケースの前に runner から呼び出され、バッファをリセットします。
 pub(crate) fn reset_current() {
     CURRENT.with(|c| c.borrow_mut().clear());
 }
 
-/// Internal: called by the runner after a case to harvest its labels.
+/// 内部用: ケース実行後に runner から呼び出され、そのケースのラベルを回収します。
 pub(crate) fn take_current() -> Vec<String> {
     CURRENT.with(|c| std::mem::take(&mut *c.borrow_mut()))
 }
 
-/// Internal: invoked by the [`classify!`] macro. Records `label` once per
-/// case even if the macro is hit multiple times with the same label.
+/// 内部用: [`classify!`] マクロから呼び出されます。同じラベルでマクロが複数回
+/// ヒットしても、`label` はケースごとに 1 回だけ記録されます。
 #[doc(hidden)]
 pub fn record_label(label: impl Into<String>) {
     let label = label.into();
@@ -88,7 +87,7 @@ pub fn record_label(label: impl Into<String>) {
     });
 }
 
-/// Records `label` for the current test case when `cond` is true.
+/// `cond` が真のときに、現在のテストケースに対して `label` を記録します。
 ///
 /// ```ignore
 /// use propcheck::{run, classify};

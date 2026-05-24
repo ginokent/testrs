@@ -1,5 +1,5 @@
-//! Tests for the Batch 6 additions: differential testing helper and
-//! `ShrinkMode::Exhaustive`.
+//! Batch 6で追加された機能のテスト: 差分テストヘルパーと
+//! `ShrinkMode::Exhaustive`です。
 
 use propcheck::{differential_with, forall_with, Config, ShrinkMode};
 
@@ -22,14 +22,14 @@ fn slow_sort(v: &[u8]) -> Vec<u8> {
 }
 
 fn fast_sort(v: &[u8]) -> Vec<u8> {
-    // Same impl; should agree.
+    // 同じ実装。結果は一致するはずです。
     let mut v = v.to_vec();
     v.sort_unstable();
     v
 }
 
 fn buggy_sort(v: &[u8]) -> Vec<u8> {
-    // Deliberately drops the last element to force divergence.
+    // 意図的に最後の要素を捨て、差異が出るようにしています。
     let mut v = v.to_vec();
     v.sort();
     v.pop();
@@ -61,9 +61,9 @@ fn differential_catches_disagreement() {
 
 #[test]
 fn exhaustive_shrink_mode_runs_to_completion() {
-    // Just verify the mode setting is observed and produces a valid
-    // shrunk value (it should equal Greedy's result for this trivial
-    // property, since both reduce to 100).
+    // モード設定が反映され、妥当なshrink結果が得られることを確認するだけの
+    // テストです（この自明なプロパティでは、両モードとも100に収束するため、
+    // Greedyの結果と一致するはずです）。
     let cfg = Config {
         shrink_mode: ShrinkMode::Exhaustive,
         ..no_replay_cfg(3)
@@ -75,9 +75,9 @@ fn exhaustive_shrink_mode_runs_to_completion() {
 
 #[test]
 fn exhaustive_shrink_mode_for_nested_data() {
-    // Vec<i32> property fails when any element exceeds 50. Greedy and
-    // exhaustive should both reach [51]. We assert both modes produce
-    // the same answer here as a consistency check.
+    // Vec<i32>のプロパティは、いずれかの要素が50を超えると失敗します。
+    // Greedyとexhaustiveのいずれも[51]に到達するはずです。整合性チェックとして、
+    // 両モードが同じ結果を生成することをここで確認します。
     let outcome_greedy = forall_with(
         Config {
             shrink_mode: ShrinkMode::Greedy,

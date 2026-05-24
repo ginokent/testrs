@@ -1,28 +1,27 @@
-//! End-to-end test for the regression-replay feature.
+//! regression-replay機能のエンドツーエンドテストです。
 //!
-//! We can't easily reach into `target/propcheck-regressions/` from a test
-//! (it would race with other tests), so instead we exercise the on-disk
-//! IO through a temporary directory and verify that:
+//! テストから`target/propcheck-regressions/`に直接アクセスするのは難しいため
+//! （他のテストと競合します）、代わりに一時ディレクトリを介してディスク上の
+//! IOを動作確認し、以下を検証します:
 //!
-//! 1. A failing run appends the seed to the configured file.
-//! 2. A subsequent run replays the file's seed first and reproduces the
-//!    failure deterministically.
+//! 1. 失敗した実行は、設定されたファイルにseedを追記します。
+//! 2. その後の実行は、ファイルのseedを最初に再生し、決定的に失敗を再現します。
 
 use std::fs;
 use std::process::Command;
 
 #[test]
 fn regression_seed_is_persisted_and_replayed() {
-    // We drive this via a sub-process so it can panic safely without
-    // killing the whole test binary. Use the workspace's own cargo to
-    // build a tiny test binary inline.
+    // テストバイナリ全体を巻き込まずに安全にpanicできるよう、サブプロセス経由で
+    // 実行します。ワークスペース自身のcargoを使い、インラインで小さなテストバイナリを
+    // ビルドします。
     //
-    // To keep this test self-contained without a separate binary crate,
-    // we instead exercise the regression module's public-ish file IO
-    // through propcheck's own runner with regression_replay enabled and
-    // a known-failing property — then read the resulting file directly.
+    // 別のバイナリクレートを用意せずにこのテストを自己完結させるため、代わりに
+    // regression_replayを有効にしたpropcheck自身のランナーと既知の失敗するプロパティを
+    // 使ってregressionモジュールの（半）公開のファイルIOを動作させ、結果として
+    // できたファイルを直接読みます。
 
-    // Where regression files land:
+    // regressionファイルの保存先:
     let target_dir = std::env::var("CARGO_TARGET_DIR")
         .ok()
         .map(std::path::PathBuf::from)
@@ -32,22 +31,21 @@ fn regression_seed_is_persisted_and_replayed() {
             std::path::PathBuf::from(manifest).join("target")
         });
     let reg_dir = target_dir.join("propcheck-regressions");
-    // Use a unique test name to avoid colliding with other tests.
+    // 他のテストと衝突しないよう、一意なテスト名を使用します。
     let test_name = format!("regression_e2e_{}", std::process::id());
     let reg_file = reg_dir.join(format!("{test_name}.txt"));
     let _ = fs::remove_file(&reg_file);
 
-    // Run a known-failing property in a sub-process so the panic doesn't
-    // crash this test. We use `cargo` to spawn a child... but for
-    // simplicity, just use std::panic::catch_unwind here.
+    // panicがこのテストをクラッシュさせないよう、既知の失敗するプロパティを
+    // サブプロセスで実行します。`cargo`で子プロセスを生成する方法もありますが、
+    // 簡潔さのためここではstd::panic::catch_unwindを使用します。
     let test_name_for_run = test_name.clone();
     let captured = std::panic::catch_unwind(move || {
         propcheck::run::<u32, _, _>(&test_name_for_run, |&n: &u32| n < 50);
     });
     assert!(captured.is_err(), "expected runner to panic on failure");
 
-    // After the failure, the regression file should exist and contain
-    // at least one seed line.
+    // 失敗後、regression ファイルが存在し、少なくとも 1 行の seed を含むはずです。
     assert!(
         reg_file.exists(),
         "regression file was not created at {reg_file:?}"
@@ -60,8 +58,8 @@ fn regression_seed_is_persisted_and_replayed() {
         .collect();
     assert!(!seeds.is_empty(), "expected at least one persisted seed");
 
-    // Re-run with replay enabled: the same seed should reproduce, which
-    // means the runner panics again.
+    // replayを有効にして再実行: 同じseedで再現するはずなので、ランナーは
+    // 再びpanicします。
     let test_name_for_replay = test_name.clone();
     let captured2 = std::panic::catch_unwind(move || {
         propcheck::run::<u32, _, _>(&test_name_for_replay, |&n: &u32| n < 50);
@@ -71,7 +69,7 @@ fn regression_seed_is_persisted_and_replayed() {
         "regression should reproduce the failure"
     );
 
-    // Cleanup.
+    // 後片付け。
     let _ = fs::remove_file(&reg_file);
 }
 
@@ -109,7 +107,7 @@ fn run_with_regression_replay_disabled_does_not_persist() {
         "file should not be created when regression_replay = false"
     );
 
-    // Silence unused-import warning for Command when this file is built
-    // without spawning sub-processes.
+    // このファイルがサブプロセス生成なしでビルドされる場合に、Commandの
+    // unused-import警告を抑制します。
     let _ = std::mem::size_of::<Command>();
 }

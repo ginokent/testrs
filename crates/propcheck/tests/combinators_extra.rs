@@ -1,9 +1,9 @@
-//! Tests for Tier-S/A combinators added later: flat_map, char_range,
-//! bytes, float ranges, prop_assert_close!, prop_recursive!.
+//! 後から追加されたTier-S/Aコンビネータのテスト: flat_map、char_range、
+//! bytes、floatのrange、prop_assert_close!、prop_recursive!です。
 //!
-//! We use `'a'..'z'` (exclusive) deliberately to match `char_range`'s
-//! `Range<char>` signature; clippy's "almost-complete range" lint is a
-//! false positive in this test.
+//! `char_range`の`Range<char>`シグネチャに合わせるため、意図的に
+//! `'a'..'z'`（exclusive）を使用しています。このテストにおける
+//! clippyの「almost-complete range」lintは誤検知です。
 #![allow(clippy::almost_complete_range)]
 
 use propcheck::strategy::{
@@ -27,7 +27,7 @@ fn cfg(seed: u64) -> Config {
 
 #[test]
 fn flat_map_generates_dependent_length() {
-    // First pick a length 1..=5, then a Vec of exactly that length.
+    // まず長さ1..=5を選び、その長さちょうどのVecを生成します。
     let s = int_range(1usize..6).flat_map(|len| vec_of(any::<u8>(), len..len + 1));
     let mut rng = propcheck::XorShift64::seed_from_u64(7);
     for _ in 0..100 {
@@ -109,7 +109,7 @@ fn f64_range_shrinks_toward_lo_when_zero_not_in_range() {
 #[test]
 fn prop_assert_close_passes_within_epsilon() {
     let outcome = propcheck::forall_with(cfg(23), |&n: &u8| -> bool {
-        // Trivially close: identical values are within any epsilon.
+        // 自明に近い値: 同一の値はどんなepsilonに対しても範囲内です。
         let x = n as f64;
         prop_assert_close!(x, x + 1e-12, epsilon = 1e-9);
         true
@@ -164,13 +164,13 @@ fn prop_recursive_builds_tree_strategy() {
         let v = s.new_value(&mut rng, 8);
         max_depth_seen = max_depth_seen.max(depth_of(&v));
     }
-    // We asked for depth = 3, so the runtime tree must respect the bound.
-    // (The leaves contribute 1, then 3 inner layers wrap them.)
+    // depth = 3 を指定したので、実行時のツリーはその上限を守る必要があります。
+    // (葉が 1 を寄与し、その上に 3 層の inner がそれらを包みます。)
     assert!(
         max_depth_seen <= 4,
         "expected depth <= 4, saw {max_depth_seen}"
     );
-    // We should also see at least one Array to know recursion fires.
+    // 再帰が発火することを確認するため、Array が少なくとも 1 つは現れるはずです。
     let mut rng = propcheck::XorShift64::seed_from_u64(31);
     let any_array = (0..200).any(|_| matches!(s.new_value(&mut rng, 8), Json::Array(_)));
     assert!(any_array, "expected at least one Array variant");

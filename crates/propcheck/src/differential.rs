@@ -1,17 +1,17 @@
-//! Differential property testing.
+//! differential なプロパティテストを提供します。
 //!
-//! Runs two implementations of the same function against random inputs
-//! and asserts they produce identical outputs. Commonly used to compare a
-//! new implementation against a known-good reference, or two different
-//! approaches against each other.
+//! 同じ関数の 2 つの実装をランダムな入力に対して実行し、両者が同一の出力を
+//! 生成することを assert します。よく使われる用途としては、新しい実装を
+//! 既知の正しい参照実装と比較したり、2 つの異なるアプローチを互いに比較する
+//! ことが挙げられます。
 
 use std::fmt::Debug;
 
 use crate::{prop_assert_eq, run_with, Arbitrary, Config};
 
-/// Asserts that `lhs(input) == rhs(input)` for every randomly generated
-/// `I`. On disagreement, the runner reports both outputs and the shrunk
-/// input.
+/// ランダムに生成されたあらゆる `I` について `lhs(input) == rhs(input)` であることを
+/// assert します。不一致があった場合、runner は両方の出力と shrink された入力を
+/// 報告します。
 ///
 /// ```ignore
 /// fn slow_sort(v: &Vec<i32>) -> Vec<i32> { /* ... */ }
@@ -28,7 +28,7 @@ where
     differential_with(name, Config::default(), lhs, rhs)
 }
 
-/// Same as [`differential`] but with a custom [`Config`].
+/// [`differential`] と同じですが、カスタムの [`Config`] を指定できます。
 pub fn differential_with<I, O, F, G>(name: &str, cfg: Config, lhs: F, rhs: G)
 where
     I: Arbitrary,
@@ -36,9 +36,9 @@ where
     F: Fn(&I) -> O,
     G: Fn(&I) -> O,
 {
-    // Use the closure-capturing form so a single `lhs` / `rhs` can be
-    // shared across the whole run (rather than each case getting its own
-    // copy through `Clone`).
+    // クロージャでキャプチャする形式を使用することで、各ケースが `Clone` で
+    // 個別のコピーを取得するのではなく、1 つの `lhs` / `rhs` を実行全体で
+    // 共有できるようにしています。
     let lhs = &lhs;
     let rhs = &rhs;
     run_with(name, cfg, move |input: &I| -> bool {

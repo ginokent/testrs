@@ -1,17 +1,16 @@
-//! Strategies for generating constrained `String`s.
+//! 制約付き `String` を生成するための strategy 群です。
 //!
-//! Built-in character sets cover the common cases that parser tests want:
-//! ASCII digits, ASCII alphanumerics, hex digits, printable ASCII, and an
-//! escape hatch [`from_char_set`] for arbitrary user-defined sets.
+//! 組み込みの文字集合はパーサーテストでよくある用途を網羅します。
+//! ASCII 数字、ASCII 英数字、16 進数字、印字可能 ASCII、そして
+//! 任意のユーザー定義集合のためのエスケープハッチ [`from_char_set`] です。
 //!
-//! All strategies in this module shrink the same way:
+//! このモジュールのすべての strategy は同じ方法で shrink します。
 //!
-//! 1. Reduce the length toward `min_len` (try empty first if allowed,
-//!    then halved prefixes, then single-element removals).
-//! 2. For each character, replace it with the first character of the set
-//!    (the "canonical" value).
+//! 1. 長さを `min_len` に向けて削減します (許可されていれば最初に空を試し、
+//!    次に半分にした接頭辞、その次に 1 要素削除)。
+//! 2. 各文字を集合の先頭文字 (「正規」値) に置き換えます。
 //!
-//! # Example
+//! # 例
 //!
 //! ```
 //! use propcheck_core::strategy::{Strategy, str};
@@ -29,8 +28,8 @@ use std::ops::Range;
 use crate::rng::Rng;
 use crate::strategy::Strategy;
 
-/// A [`Strategy`] producing `String`s drawn uniformly from a fixed
-/// character set with a length in `[min_len, max_len)`.
+/// 固定の文字集合から一様に文字を抽出し、長さが `[min_len, max_len)` の
+/// `String` を生成する [`Strategy`] です。
 pub struct CharSetString {
     chars: Cow<'static, [char]>,
     min_len: usize,
@@ -58,12 +57,12 @@ impl Strategy for CharSetString {
         let mut out: Vec<String> = Vec::new();
         let chars: Vec<char> = value.chars().collect();
 
-        // Length-first shrinks (respecting min_len).
+        // 長さを優先する shrink (min_len を尊重)。
         if chars.len() > self.min_len {
             if self.min_len == 0 {
                 out.push(String::new());
             }
-            // Halved prefixes.
+            // 半分にした接頭辞。
             let mut chunk = chars.len();
             loop {
                 chunk /= 2;
@@ -75,7 +74,7 @@ impl Strategy for CharSetString {
                     out.push(chars[..new_len].iter().collect());
                 }
             }
-            // Single-element removals.
+            // 1 要素ずつの削除。
             for i in 0..chars.len() {
                 if chars.len() > self.min_len {
                     let mut v = chars.clone();
@@ -85,7 +84,7 @@ impl Strategy for CharSetString {
             }
         }
 
-        // Per-character collapse toward the canonical (first) character.
+        // 各文字を正規 (先頭) 文字に向けて collapse します。
         let target = self.chars[0];
         for (i, c) in chars.iter().enumerate() {
             if *c != target {
@@ -98,7 +97,7 @@ impl Strategy for CharSetString {
     }
 }
 
-// --- Built-in character sets ------------------------------------------
+// --- 組み込みの文字集合 ------------------------------------------
 
 const ASCII_DIGITS: &[char] = &['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'];
 const ASCII_LETTERS_LOWER: &[char] = &[
@@ -123,7 +122,7 @@ const ASCII_ALPHANUMERIC: &[char] = &[
 const HEX_LOWER: &[char] = &[
     '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',
 ];
-// All printable ASCII excluding control chars (0x20..0x7e inclusive).
+// 制御文字を除くすべての印字可能 ASCII (0x20..0x7e 両端含む)。
 const ASCII_PRINTABLE: &[char] = &[
     ' ', '!', '"', '#', '$', '%', '&', '\'', '(', ')', '*', '+', ',', '-', '.', '/', '0', '1', '2',
     '3', '4', '5', '6', '7', '8', '9', ':', ';', '<', '=', '>', '?', '@', 'A', 'B', 'C', 'D', 'E',
@@ -132,7 +131,7 @@ const ASCII_PRINTABLE: &[char] = &[
     'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z', '{', '|', '}', '~',
 ];
 
-/// Strategy producing strings of ASCII digits `'0'..='9'`.
+/// ASCII 数字 `'0'..='9'` からなる文字列を生成する strategy です。
 pub fn ascii_digits(len_range: Range<usize>) -> CharSetString {
     CharSetString {
         chars: Cow::Borrowed(ASCII_DIGITS),
@@ -141,7 +140,7 @@ pub fn ascii_digits(len_range: Range<usize>) -> CharSetString {
     }
 }
 
-/// Strategy producing strings of lowercase ASCII letters `'a'..='z'`.
+/// 小文字 ASCII 英字 `'a'..='z'` からなる文字列を生成する strategy です。
 pub fn ascii_letters_lower(len_range: Range<usize>) -> CharSetString {
     CharSetString {
         chars: Cow::Borrowed(ASCII_LETTERS_LOWER),
@@ -150,7 +149,7 @@ pub fn ascii_letters_lower(len_range: Range<usize>) -> CharSetString {
     }
 }
 
-/// Strategy producing strings of uppercase ASCII letters `'A'..='Z'`.
+/// 大文字 ASCII 英字 `'A'..='Z'` からなる文字列を生成する strategy です。
 pub fn ascii_letters_upper(len_range: Range<usize>) -> CharSetString {
     CharSetString {
         chars: Cow::Borrowed(ASCII_LETTERS_UPPER),
@@ -159,7 +158,7 @@ pub fn ascii_letters_upper(len_range: Range<usize>) -> CharSetString {
     }
 }
 
-/// Strategy producing strings of ASCII letters (both cases).
+/// ASCII 英字 (大文字小文字両方) からなる文字列を生成する strategy です。
 pub fn ascii_letters(len_range: Range<usize>) -> CharSetString {
     CharSetString {
         chars: Cow::Borrowed(ASCII_LETTERS),
@@ -168,7 +167,7 @@ pub fn ascii_letters(len_range: Range<usize>) -> CharSetString {
     }
 }
 
-/// Strategy producing strings of ASCII letters and digits.
+/// ASCII 英字と数字からなる文字列を生成する strategy です。
 pub fn ascii_alphanumeric(len_range: Range<usize>) -> CharSetString {
     CharSetString {
         chars: Cow::Borrowed(ASCII_ALPHANUMERIC),
@@ -177,7 +176,7 @@ pub fn ascii_alphanumeric(len_range: Range<usize>) -> CharSetString {
     }
 }
 
-/// Strategy producing lowercase hex strings, e.g. `"deadbeef"`.
+/// 小文字 16 進文字列 (例: `"deadbeef"`) を生成する strategy です。
 pub fn hex_string(len_range: Range<usize>) -> CharSetString {
     CharSetString {
         chars: Cow::Borrowed(HEX_LOWER),
@@ -186,7 +185,7 @@ pub fn hex_string(len_range: Range<usize>) -> CharSetString {
     }
 }
 
-/// Strategy producing printable ASCII strings (space through `~`).
+/// 印字可能 ASCII 文字列 (スペースから `~` まで) を生成する strategy です。
 pub fn ascii_printable(len_range: Range<usize>) -> CharSetString {
     CharSetString {
         chars: Cow::Borrowed(ASCII_PRINTABLE),
@@ -195,11 +194,10 @@ pub fn ascii_printable(len_range: Range<usize>) -> CharSetString {
     }
 }
 
-/// Strategy producing strings drawn from a user-supplied character set.
+/// ユーザー指定の文字集合から文字を抽出して文字列を生成する strategy です。
 ///
-/// The first character of `chars` is treated as the canonical "smallest"
-/// value during shrinking — each non-canonical character is replaced with
-/// it as part of the shrink search.
+/// `chars` の先頭文字は shrink 中の正規の「最小」値として扱われます。
+/// shrink 探索の一環として、正規でない各文字はこの文字に置き換えられます。
 pub fn from_char_set(chars: Vec<char>, len_range: Range<usize>) -> CharSetString {
     assert!(
         !chars.is_empty(),
@@ -261,8 +259,8 @@ mod tests {
         let s = ascii_alphanumeric(1..10);
         let val = "AaZz9".to_string();
         let shrinks = s.shrink_value(&val);
-        // First char of the set is '0' — at least one shrink should
-        // contain '0'.
+        // 集合の先頭文字は '0' なので、少なくとも 1 つの shrink には
+        // '0' が含まれているはず。
         assert!(shrinks.iter().any(|s| s.contains('0')));
     }
 
@@ -271,7 +269,7 @@ mod tests {
         let s = ascii_digits(0..100);
         let val = "12345".to_string();
         let shrinks = s.shrink_value(&val);
-        // First shrink should be empty (most aggressive).
+        // 最初の shrink は空であるはず (最も積極的な削減)。
         assert_eq!(shrinks[0], "");
     }
 

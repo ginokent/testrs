@@ -1,10 +1,10 @@
-//! Regression-seed persistence.
+//! regression seed の永続化を行います。
 //!
-//! When a property test fails, its seed is appended to
-//! `<target>/propcheck-regressions/<sanitized_name>.txt`. On subsequent
-//! runs the runner replays those seeds first, before generating any random
-//! cases. This catches "the bug is back" regressions deterministically
-//! without the user remembering to set `PROPCHECK_SEED`.
+//! プロパティテストが失敗すると、その seed は
+//! `<target>/propcheck-regressions/<sanitized_name>.txt` に追記されます。次回以降の
+//! 実行では、runner はランダムなケースを生成する前にまずこれらの seed を再生します。
+//! これにより、ユーザーが `PROPCHECK_SEED` を設定することを覚えていなくても、
+//! 「バグが再発した」という regression を決定論的に捕捉できます。
 
 use std::collections::BTreeSet;
 use std::env;
@@ -12,13 +12,13 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
-/// Maximum number of seeds retained per file. Excess (oldest) seeds are
-/// dropped to keep the file size bounded.
+/// 1 ファイルあたり保持する seed の最大数です。ファイルサイズを抑えるため、
+/// 超過分（最も古い seed）は破棄されます。
 const MAX_SEEDS_PER_FILE: usize = 64;
 
-/// Returns the regression file for `test_name`, or `None` if neither
-/// `CARGO_TARGET_DIR` nor `CARGO_MANIFEST_DIR` is set (typical when
-/// running from a published binary instead of `cargo test`).
+/// `test_name` に対応する regression ファイルを返します。`CARGO_TARGET_DIR` と
+/// `CARGO_MANIFEST_DIR` のいずれも設定されていない場合（`cargo test` ではなく
+/// 公開済みのバイナリから実行された場合に典型的）は `None` を返します。
 pub(crate) fn regression_file_path(test_name: &str) -> Option<PathBuf> {
     let target_dir = if let Ok(t) = env::var("CARGO_TARGET_DIR") {
         PathBuf::from(t)
@@ -50,8 +50,8 @@ fn sanitize(name: &str) -> String {
     out
 }
 
-/// Reads any persisted regression seeds for this test. Returns an empty
-/// vec if the file does not exist or cannot be read.
+/// このテストについて永続化されている regression seed を読み込みます。
+/// ファイルが存在しない、または読み込めない場合は空の vec を返します。
 pub(crate) fn read_seeds(path: &Path) -> Vec<u64> {
     let Ok(content) = fs::read_to_string(path) else {
         return Vec::new();
@@ -72,9 +72,9 @@ pub(crate) fn read_seeds(path: &Path) -> Vec<u64> {
     out
 }
 
-/// Appends `seed` to the regression file for this test, creating parent
-/// directories as needed. Bounded to [`MAX_SEEDS_PER_FILE`] most recent
-/// entries. Best-effort: errors are silently ignored.
+/// このテストの regression ファイルに `seed` を追記します。必要に応じて親
+/// ディレクトリを作成します。直近の [`MAX_SEEDS_PER_FILE`] 件までに制限されます。
+/// ベストエフォートで動作し、エラーは黙って無視されます。
 pub(crate) fn append_seed(path: &Path, seed: u64) -> io::Result<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
@@ -114,7 +114,7 @@ mod tests {
         let path = dir.join("foo.txt");
         append_seed(&path, 1).unwrap();
         append_seed(&path, 2).unwrap();
-        append_seed(&path, 1).unwrap(); // duplicate
+        append_seed(&path, 1).unwrap(); // 重複
         let read = read_seeds(&path);
         assert_eq!(read, vec![1, 2]);
         fs::remove_dir_all(&dir).unwrap();
@@ -131,7 +131,7 @@ mod tests {
         }
         let read = read_seeds(&path);
         assert_eq!(read.len(), MAX_SEEDS_PER_FILE);
-        // Oldest were dropped; newest are retained.
+        // 最も古いものは破棄され、最も新しいものが保持されます。
         assert!(read.contains(&(MAX_SEEDS_PER_FILE as u64 + 9)));
         assert!(!read.contains(&0));
         fs::remove_dir_all(&dir).unwrap();

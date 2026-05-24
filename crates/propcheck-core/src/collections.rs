@@ -1,5 +1,5 @@
-//! `Arbitrary` impls for std collections, smart pointers, and a few common
-//! "value" types from the standard library.
+//! 標準ライブラリのコレクション、スマートポインタ、いくつかのよく使われる
+//! 「値」型に対する `Arbitrary` の実装です。
 
 use crate::arbitrary::Arbitrary;
 use crate::rng::Rng;
@@ -235,8 +235,8 @@ impl<T: Arbitrary> Arbitrary for RefCell<T> {
 
 impl Arbitrary for PathBuf {
     fn arbitrary<R: Rng + ?Sized>(rng: &mut R, size: usize) -> Self {
-        // Bias toward path-like strings: occasionally insert '/' or '\\' so
-        // generators produce multi-component paths.
+        // パス風の文字列に偏らせます。時折 '/' や '\\' を挿入することで、
+        // ジェネレータが複数のコンポーネントを持つパスを生成するようにします。
         let s: String = Arbitrary::arbitrary(rng, size);
         PathBuf::from(s)
     }
@@ -378,16 +378,16 @@ macro_rules! impl_arbitrary_nonzero {
     ($($nz:ty => $base:ty),* $(,)?) => {$(
         impl Arbitrary for $nz {
             fn arbitrary<R: Rng + ?Sized>(rng: &mut R, size: usize) -> Self {
-                // Retry up to ~30 times; the probability of drawing zero is
-                // ~1/2^bits for the bit-width-capped generator, so this loop
-                // almost never spins more than once.
+                // 最大で約30回リトライします。ビット幅を制限したジェネレータでは
+                // ゼロを引く確率は約 1/2^bits なので、このループが2回以上回ることは
+                // ほとんどありません。
                 for _ in 0..32 {
                     let v: $base = Arbitrary::arbitrary(rng, size);
                     if let Some(nz) = <$nz>::new(v) {
                         return nz;
                     }
                 }
-                // Fallback: 1 is always valid for unsigned; for signed too.
+                // フォールバック: 1 は符号なしでも符号付きでも常に有効な値です。
                 <$nz>::new(1).unwrap()
             }
             fn shrink(&self) -> Box<dyn Iterator<Item = Self> + '_> {
@@ -542,9 +542,9 @@ mod tests {
     fn nonzero_shrinks_skip_zero() {
         let n = NonZeroU32::new(100).unwrap();
         let v: Vec<NonZeroU32> = n.shrink().collect();
-        // No shrink should ever be zero (filtered by NonZeroU32::new).
+        // shrink結果が 0 になることはありません（NonZeroU32::new でフィルタされます）。
         assert!(v.iter().all(|x| x.get() != 0));
-        // At least one shrink should be present.
+        // 少なくとも1つの shrink 候補が存在するはずです。
         assert!(!v.is_empty());
     }
 }

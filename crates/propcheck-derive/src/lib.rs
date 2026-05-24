@@ -1,28 +1,27 @@
-//! Hand-rolled proc-macros for propcheck.
+//! propcheck 向けに手書きされた proc-macro 群です。
 //!
-//! This crate depends only on the compiler-provided `proc_macro` crate — no
-//! external dependencies such as `syn` or `quote`. The parser is small,
-//! tuned for the inputs we actually accept (structs and free functions),
-//! and intentionally returns clear errors rather than supporting every Rust
-//! syntax detail.
+//! このクレートはコンパイラ提供の `proc_macro` クレートのみに依存しており、`syn`
+//! や `quote` といった外部依存は持ちません。パーサーは小さく、実際に受け入れる
+//! 入力（struct と自由関数）に合わせて調整されており、Rust 構文のあらゆる詳細を
+//! サポートするのではなく、意図的に明確なエラーを返すようになっています。
 //!
-//! ## What's supported
+//! ## サポートしている内容
 //!
 //! ### `#[derive(Arbitrary)]`
-//! - Named-field structs:     `struct Foo { a: T, b: U }`
-//! - Tuple structs:           `struct Foo(T, U);`
-//! - Unit structs:            `struct Foo;`
-//! - Generic structs:         `struct Foo<T> { x: T }`
-//!   (an `Arbitrary` bound is automatically added to each type parameter)
+//! - 名前付きフィールドの struct: `struct Foo { a: T, b: U }`
+//! - タプル struct:               `struct Foo(T, U);`
+//! - unit struct:                 `struct Foo;`
+//! - ジェネリック struct:         `struct Foo<T> { x: T }`
+//!   （各型パラメータに `Arbitrary` 境界が自動的に追加されます）
 //!
-//! Enums and structs with custom where-clauses are **not** supported; write
-//! the `Arbitrary` impl by hand for those.
+//! enum や独自の where 句を持つ struct は **サポートしていません**。それらに
+//! ついては `Arbitrary` 実装を手書きしてください。
 //!
 //! ### `#[propcheck]`
-//! Wraps a free function as a `#[test]` driven by `propcheck::run`. Each
-//! parameter type must implement `Arbitrary`. The function body is run for
-//! each generated case; `prop_assert!`, `prop_assert_eq!`, `prop_assume!`
-//! all work inside.
+//! 自由関数を `propcheck::run` で駆動される `#[test]` としてラップします。
+//! 各パラメータの型は `Arbitrary` を実装している必要があります。関数本体は
+//! 生成されたケースごとに実行され、内部では `prop_assert!`、`prop_assert_eq!`、
+//! `prop_assume!` がすべて利用できます。
 
 extern crate proc_macro;
 
@@ -32,14 +31,14 @@ use proc_macro::{Delimiter, TokenStream, TokenTree};
 // #[derive(Arbitrary)]
 // ---------------------------------------------------------------------------
 
-/// Derives [`propcheck::Arbitrary`](https://docs.rs/propcheck) for a
-/// struct or enum.
+/// struct または enum に対して [`propcheck::Arbitrary`](https://docs.rs/propcheck)
+/// を導出します。
 ///
-/// Optional per-field attribute:
-/// `#[arbitrary(strategy = <expr>)]` — generate this field using the
-/// given [`propcheck::Strategy`] instead of the field type's default
-/// `Arbitrary` impl. The expression can be a Rust expression or a string
-/// literal containing one (proptest-style).
+/// オプションのフィールド単位の属性として、
+/// `#[arbitrary(strategy = <expr>)]` を指定できます。これにより、フィールド型の
+/// デフォルトの `Arbitrary` 実装の代わりに、指定した [`propcheck::Strategy`] を
+/// 用いてそのフィールドを生成します。式は Rust の式そのもの、または式を含む
+/// 文字列リテラル（proptest 風）のいずれかを指定できます。
 #[proc_macro_derive(Arbitrary, attributes(arbitrary))]
 pub fn derive_arbitrary(input: TokenStream) -> TokenStream {
     match parse_input(input) {
@@ -61,8 +60,8 @@ struct ParsedStruct {
     generics_decl: String,
     generics_use: String,
     type_params: Vec<String>,
-    /// Tokens copied from the optional `where` clause, e.g. `T: Send`.
-    /// Empty if the struct had no where clause.
+    /// 任意指定の `where` 句からコピーされたトークン群です（例: `T: Send`）。
+    /// struct に where 句がなかった場合は空となります。
     where_extra: String,
     fields: Fields,
 }
@@ -85,14 +84,14 @@ struct Variant {
 
 #[derive(Debug)]
 struct FieldInfo {
-    /// Field name. Empty string for unnamed (tuple) fields; access them
-    /// by index in codegen.
+    /// フィールド名。名前なし（タプル）フィールドの場合は空文字列となり、
+    /// コード生成ではインデックス経由でアクセスします。
     name: String,
-    /// Field type, stringified as the user wrote it.
+    /// フィールドの型を、ユーザーが記述したとおりに文字列化したものです。
     ty: String,
-    /// Optional `#[arbitrary(strategy = ...)]` expression. When set, the
-    /// generated impl uses `Strategy::new_value` / `Strategy::shrink_value`
-    /// instead of `Arbitrary::arbitrary` / `Arbitrary::shrink`.
+    /// 任意指定の `#[arbitrary(strategy = ...)]` 式です。設定されている場合、
+    /// 生成される実装は `Arbitrary::arbitrary` / `Arbitrary::shrink` ではなく
+    /// `Strategy::new_value` / `Strategy::shrink_value` を使用します。
     strategy: Option<String>,
 }
 
@@ -108,8 +107,8 @@ struct FieldAttrs {
     strategy: Option<String>,
 }
 
-/// Like [`skip_attrs_and_visibility`] but extracts the
-/// `#[arbitrary(strategy = ...)]` attribute when present.
+/// [`skip_attrs_and_visibility`] と同様ですが、`#[arbitrary(strategy = ...)]`
+/// 属性が存在する場合はそれを抽出します。
 fn collect_field_attrs(
     iter: &mut std::iter::Peekable<proc_macro::token_stream::IntoIter>,
 ) -> FieldAttrs {
@@ -124,7 +123,7 @@ fn collect_field_attrs(
                     if let Some(strat) = try_parse_arbitrary_attr(g_stream) {
                         attrs.strategy = Some(strat);
                     }
-                    // else: discard (other attributes are irrelevant to us)
+                    // それ以外の場合は破棄します（他の属性はここでは関係ありません）。
                 }
             }
             Some(TokenTree::Ident(id)) if id.to_string() == "pub" => {
@@ -141,9 +140,9 @@ fn collect_field_attrs(
     attrs
 }
 
-/// Parses `arbitrary ( strategy = <expr> )` and returns the expression
-/// tokens as a Rust source string. Returns `None` for any other attribute
-/// shape.
+/// `arbitrary ( strategy = <expr> )` をパースし、その式のトークンを Rust の
+/// ソース文字列として返します。それ以外の形式の属性については `None` を
+/// 返します。
 fn try_parse_arbitrary_attr(stream: TokenStream) -> Option<String> {
     let mut it = stream.into_iter();
     match it.next()? {
@@ -166,8 +165,8 @@ fn try_parse_arbitrary_attr(stream: TokenStream) -> Option<String> {
     let rest: TokenStream = inner.collect();
     let s = rest.to_string();
     let trimmed = s.trim();
-    // If the value is a string literal, strip surrounding quotes and
-    // unescape the common cases. Otherwise emit the tokens as-is.
+    // 値が文字列リテラルの場合は、囲み引用符を取り除き、よくあるケースのみ
+    // アンエスケープします。それ以外の場合はトークンをそのまま出力します。
     let unquoted = if trimmed.len() >= 2 && trimmed.starts_with('"') && trimmed.ends_with('"') {
         trimmed[1..trimmed.len() - 1]
             .replace("\\\"", "\"")
@@ -236,7 +235,7 @@ fn parse_input(input: TokenStream) -> Result<ParsedItem, String> {
             fields,
         }))
     } else {
-        // enum
+        // enum の場合
         let body = match iter.next() {
             Some(TokenTree::Group(g)) if g.delimiter() == Delimiter::Brace => g.stream(),
             Some(other) => {
@@ -262,16 +261,15 @@ fn parse_input(input: TokenStream) -> Result<ParsedItem, String> {
     }
 }
 
-/// Consumes an optional `where C1: T1, C2: T2` clause and returns its
-/// tokens stringified (excluding the `where` keyword and any trailing
-/// `{` / `;`).
+/// 任意指定の `where C1: T1, C2: T2` 句を消費し、そのトークンを文字列化して
+/// 返します（`where` キーワードや末尾の `{` / `;` は含みません）。
 fn parse_optional_where(
     iter: &mut std::iter::Peekable<proc_macro::token_stream::IntoIter>,
 ) -> Result<String, String> {
     if !matches!(iter.peek(), Some(TokenTree::Ident(id)) if id.to_string() == "where") {
         return Ok(String::new());
     }
-    iter.next(); // consume `where`
+    iter.next(); // `where` を消費します
     let mut tokens: Vec<TokenTree> = Vec::new();
     while let Some(t) = iter.peek() {
         match t {
@@ -305,7 +303,7 @@ fn parse_enum_variants(stream: TokenStream) -> Result<Vec<Variant>, String> {
                 ))
             }
         };
-        // After variant name: optional `(...)`, `{...}`, or directly `,`/end.
+        // バリアント名のあとには、任意の `(...)`、`{...}`、あるいはそのまま `,` または末尾が続きます。
         let fields = match iter.peek() {
             Some(TokenTree::Group(g)) if g.delimiter() == Delimiter::Parenthesis => {
                 let g = match iter.next().unwrap() {
@@ -324,7 +322,7 @@ fn parse_enum_variants(stream: TokenStream) -> Result<Vec<Variant>, String> {
             _ => Fields::Unit,
         };
         out.push(Variant { name, fields });
-        // Consume optional trailing comma.
+        // 末尾の任意のカンマを消費します。
         if matches!(iter.peek(), Some(TokenTree::Punct(p)) if p.as_char() == ',') {
             iter.next();
         }
@@ -337,14 +335,14 @@ fn skip_attrs_and_visibility(iter: &mut std::iter::Peekable<proc_macro::token_st
         match iter.peek() {
             Some(TokenTree::Punct(p)) if p.as_char() == '#' => {
                 iter.next(); // '#'
-                             // Expect a bracket group: `[...]`.
+                             // 続くのは角括弧グループ `[...]` のはずです。
                 if let Some(TokenTree::Group(_)) = iter.peek() {
                     iter.next();
                 }
             }
             Some(TokenTree::Ident(id)) if id.to_string() == "pub" => {
                 iter.next();
-                // Possible visibility scope: `(crate)`, `(super)`, `(in ...)`.
+                // 可視性スコープが続く可能性があります: `(crate)`、`(super)`、`(in ...)`。
                 if let Some(TokenTree::Group(g)) = iter.peek() {
                     if g.delimiter() == Delimiter::Parenthesis {
                         iter.next();
@@ -356,7 +354,7 @@ fn skip_attrs_and_visibility(iter: &mut std::iter::Peekable<proc_macro::token_st
     }
 }
 
-/// Parses `< ... >` if present, returning (decl_string, use_string, type_param_names).
+/// `< ... >` が存在すればパースし、(decl_string, use_string, type_param_names) を返します。
 fn parse_generics(
     iter: &mut std::iter::Peekable<proc_macro::token_stream::IntoIter>,
 ) -> Result<(String, String, Vec<String>), String> {
@@ -364,10 +362,10 @@ fn parse_generics(
     if !opens_with_angle {
         return Ok((String::new(), String::new(), Vec::new()));
     }
-    iter.next(); // consume '<'
+    iter.next(); // '<' を消費します
 
     let mut decl = String::new();
-    let mut depth = 1i32; // we are inside <...>
+    let mut depth = 1i32; // <...> の内側に入った状態です
     let mut current_param_tokens: Vec<TokenTree> = Vec::new();
     let mut params: Vec<Vec<TokenTree>> = Vec::new();
 
@@ -398,34 +396,34 @@ fn parse_generics(
         }
     }
 
-    // Build decl, use list, and extract type-param names.
+    // 宣言部、使用リスト、型パラメータ名を構築します。
     let mut use_list: Vec<String> = Vec::new();
     let mut type_params: Vec<String> = Vec::new();
     for (i, param_tokens) in params.iter().enumerate() {
         if i > 0 {
             decl.push_str(", ");
         }
-        // Decl: include all tokens as written (preserving bounds).
+        // 宣言: 記述されたとおりに全トークンを含めます（境界を保持します）。
         let decl_str = stream_to_string(param_tokens.iter().cloned().collect());
         decl.push_str(&decl_str);
 
-        // Use list and type-param extraction.
-        // Cases:
-        //   `T`            -> type param "T", use "T"
-        //   `T: Bound`     -> type param "T", use "T"
-        //   `'a`           -> lifetime "'a", use "'a"
-        //   `'a: 'b`       -> lifetime "'a",  use "'a"
-        //   `const N: T`   -> const generic, use "N"
+        // 使用リストおよび型パラメータ名の抽出。
+        // ケース:
+        //   `T`            -> 型パラメータ "T"、use は "T"
+        //   `T: Bound`     -> 型パラメータ "T"、use は "T"
+        //   `'a`           -> ライフタイム "'a"、use は "'a"
+        //   `'a: 'b`       -> ライフタイム "'a"、use は "'a"
+        //   `const N: T`   -> const ジェネリクス、use は "N"
         let first = &param_tokens[0];
         match first {
             TokenTree::Punct(p) if p.as_char() == '\'' => {
-                // Lifetime: next ident is its name.
+                // ライフタイム: 次の識別子がその名前です。
                 if let Some(TokenTree::Ident(name)) = param_tokens.get(1) {
                     use_list.push(format!("'{}", name));
                 }
             }
             TokenTree::Ident(id) if id.to_string() == "const" => {
-                // `const N: T` — use "N".
+                // `const N: T` — use は "N" となります。
                 if let Some(TokenTree::Ident(name)) = param_tokens.get(1) {
                     use_list.push(name.to_string());
                 }
@@ -502,9 +500,9 @@ fn parse_tuple_fields(stream: TokenStream) -> Result<Vec<FieldInfo>, String> {
     Ok(out)
 }
 
-/// Returns the Rust expression that generates a value for a single field
-/// during `Arbitrary::arbitrary`. Uses the field's `#[arbitrary(strategy = ...)]`
-/// expression when present, otherwise the field type's default `Arbitrary`.
+/// `Arbitrary::arbitrary` の際に単一フィールドの値を生成する Rust の式を
+/// 返します。フィールドに `#[arbitrary(strategy = ...)]` 式があればそれを
+/// 使用し、なければフィールド型のデフォルトの `Arbitrary` を使用します。
 fn gen_field_value(strategy: &Option<String>) -> String {
     match strategy {
         Some(expr) => format!(
@@ -514,9 +512,9 @@ fn gen_field_value(strategy: &Option<String>) -> String {
     }
 }
 
-/// Returns the Rust expression that yields an iterator over shrink
-/// candidates for a single field. `field_access` is the source for the
-/// current value (e.g. `self.foo` or `__f0`).
+/// 単一フィールドの shrink 候補を列挙するイテレータを生成する Rust の式を
+/// 返します。`field_access` は現在の値の取得元です（例: `self.foo` や
+/// `__f0`）。
 fn gen_field_shrink_iter(strategy: &Option<String>, field_access: &str) -> String {
     match strategy {
         Some(expr) => format!(
@@ -526,8 +524,8 @@ fn gen_field_shrink_iter(strategy: &Option<String>, field_access: &str) -> Strin
     }
 }
 
-/// Collects tokens up to (but not including) the next top-level `,`, respecting
-/// nesting of `<...>` and any delimited groups.
+/// 次のトップレベルの `,` までのトークン（カンマ自体は含みません）を集めます。
+/// `<...>` のネストや、その他の区切りグループのネストを考慮します。
 fn collect_until_top_comma(
     iter: &mut std::iter::Peekable<proc_macro::token_stream::IntoIter>,
 ) -> Vec<TokenTree> {
@@ -553,8 +551,8 @@ fn collect_until_top_comma(
 }
 
 fn generate_arbitrary_impl(s: &ParsedStruct) -> TokenStream {
-    // Build the where clause: each type param needs Arbitrary, plus the
-    // user's own where tokens if any.
+    // where 句を構築します。各型パラメータには Arbitrary 境界が必要で、
+    // ユーザー自身の where トークンがあればそれも追加します。
     let mut where_pieces: Vec<String> = s
         .type_params
         .iter()
@@ -688,7 +686,7 @@ fn generate_arbitrary_impl(s: &ParsedStruct) -> TokenStream {
     })
 }
 
-// --- enum codegen ------------------------------------------------------
+// --- enum のコード生成 ------------------------------------------------
 
 fn generate_arbitrary_impl_enum(e: &ParsedEnum) -> TokenStream {
     let mut where_pieces: Vec<String> = e
@@ -720,8 +718,8 @@ fn generate_arbitrary_impl_enum(e: &ParsedEnum) -> TokenStream {
     let self_ty = format!("{name}{generics_use}");
     let n_variants = e.variants.len();
 
-    // Find the simplest variant (preferring unit, then smallest arity).
-    // Used as the "collapse" target during shrinking.
+    // 最もシンプルなバリアントを見つけます（unit を優先し、次にアリティの
+    // 小さいものを選びます）。これは shrink 時の「collapse」対象として使用されます。
     let simplest_idx = e
         .variants
         .iter()
@@ -734,7 +732,7 @@ fn generate_arbitrary_impl_enum(e: &ParsedEnum) -> TokenStream {
         .map(|(i, _)| i)
         .unwrap_or(0);
 
-    // --- arbitrary(): pick a variant uniformly, fill its fields ---
+    // --- arbitrary(): バリアントを一様に選び、そのフィールドを埋めます ---
     let mut arms_gen = String::new();
     for (i, v) in e.variants.iter().enumerate() {
         let vname = &v.name;
@@ -761,14 +759,14 @@ fn generate_arbitrary_impl_enum(e: &ParsedEnum) -> TokenStream {
         arms_gen.push_str(&format!("            {i}u64 => {body},\n"));
     }
 
-    // --- shrink(): per-variant field shrinks + optional collapse ---
+    // --- shrink(): バリアントごとのフィールド shrink と任意の collapse ---
     let mut arms_shrink = String::new();
     for v in e.variants.iter() {
         let vname = &v.name;
         let (pat, body) = match &v.fields {
             Fields::Unit => (
                 format!("{name}::{vname}"),
-                String::from("/* no shrinks for a unit variant */"),
+                String::from("/* unit バリアントには shrink がありません */"),
             ),
             Fields::Unnamed(fs) => {
                 let pat_args: Vec<String> = (0..fs.len()).map(|i| format!("__f{i}")).collect();
@@ -787,8 +785,8 @@ fn generate_arbitrary_impl_enum(e: &ParsedEnum) -> TokenStream {
                         }
                     }
                     let field_access = format!("__f{shrink_idx}");
-                    // The match binding is already a reference, so the
-                    // strategy path takes the binding directly (no extra `&`).
+                    // match による束縛はすでに参照になっているため、strategy
+                    // パスではその束縛をそのまま渡します（追加の `&` は不要です）。
                     let shrink_iter = match &fi.strategy {
                         Some(expr) => format!(
                             "{{ let __strat = ({expr}); ::propcheck::Strategy::shrink_value(&__strat, {field_access}) }}"
@@ -821,8 +819,8 @@ fn generate_arbitrary_impl_enum(e: &ParsedEnum) -> TokenStream {
                             ));
                         }
                     }
-                    // Same `&&` consideration as above for the enum named
-                    // case: the field binding is already a reference.
+                    // 上記と同様、enum の named バリアントについても `&&` に
+                    // 関する考慮が必要です。フィールドの束縛はすでに参照です。
                     let shrink_iter = if let Some(expr) = &fi.strategy {
                         format!(
                             "{{ let __strat = ({expr}); ::propcheck::Strategy::shrink_value(&__strat, {sname}) }}"
@@ -842,8 +840,8 @@ fn generate_arbitrary_impl_enum(e: &ParsedEnum) -> TokenStream {
         ));
     }
 
-    // Collapse to simplest variant (only if it is a unit variant and the
-    // current is not already that variant).
+    // 最もシンプルなバリアントへ collapse します（そのバリアントが unit
+    // バリアントであり、かつ現在のバリアントがそれと異なる場合に限ります）。
     let collapse = if matches!(e.variants[simplest_idx].fields, Fields::Unit) {
         let target = &e.variants[simplest_idx].name;
         format!(
@@ -882,15 +880,16 @@ fn generate_arbitrary_impl_enum(e: &ParsedEnum) -> TokenStream {
 // #[propcheck]
 // ---------------------------------------------------------------------------
 
-/// Wraps a free function as a property-based test driven by `propcheck::run`.
+/// 自由関数を `propcheck::run` で駆動されるプロパティベースのテストとして
+/// ラップします。
 ///
-/// Accepts optional `key = literal` arguments:
-/// - `cases = N`         — total passing cases (default 100)
-/// - `seed = N`          — fixed PRNG seed
-/// - `max_shrinks = N`   — shrink-step budget
-/// - `max_size = N`      — generator size cap
-/// - `max_discards = N`  — discard budget before abort
-/// - `max_skips = N`     — skip budget before abort
+/// 任意指定の `key = literal` 引数を受け付けます:
+/// - `cases = N`         — 成功させるケース総数（デフォルト 100）
+/// - `seed = N`          — 固定の PRNG シード
+/// - `max_shrinks = N`   — shrink ステップの上限
+/// - `max_size = N`      — ジェネレータサイズの上限
+/// - `max_discards = N`  — abort 前の discard 上限
+/// - `max_skips = N`     — abort 前の skip 上限
 #[proc_macro_attribute]
 pub fn propcheck(attr: TokenStream, item: TokenStream) -> TokenStream {
     let args = match parse_attr_args(attr) {
@@ -980,11 +979,11 @@ fn parse_attr_args(attr: TokenStream) -> Result<AttrArgs, String> {
 struct ParsedFn {
     name: String,
     params: Vec<FieldInfo>,
-    /// Optional return type as written by the user (e.g. `Result<(), MyErr>`).
-    /// Empty string means no return type was declared.
+    /// 任意指定の戻り値型を、ユーザーが記述したとおりに保持します
+    /// （例: `Result<(), MyErr>`）。空文字列は戻り値型が宣言されていないことを意味します。
     return_type: String,
     body: String,
-    /// `true` if the function was declared `async fn`.
+    /// 関数が `async fn` として宣言されていた場合に `true` となります。
     is_async: bool,
 }
 
@@ -992,7 +991,7 @@ fn parse_fn(input: TokenStream) -> Result<ParsedFn, String> {
     let mut iter = input.into_iter().peekable();
     skip_attrs_and_visibility(&mut iter);
     let mut is_async = false;
-    // Skip / record modifiers before `fn`.
+    // `fn` の前にある修飾子をスキップ／記録します。
     while let Some(TokenTree::Ident(id)) = iter.peek() {
         let s = id.to_string();
         if s == "fn" {
@@ -1030,7 +1029,7 @@ fn parse_fn(input: TokenStream) -> Result<ParsedFn, String> {
     };
     let params = parse_named_fields(param_group.stream())?;
 
-    // Optional return type: capture verbatim if present.
+    // 任意指定の戻り値型: 存在する場合はそのまま取得します。
     let mut return_type = String::new();
     if matches!(iter.peek(), Some(TokenTree::Punct(p)) if p.as_char() == '-') {
         iter.next();
@@ -1088,19 +1087,19 @@ fn generate_test_wrapper(f: &ParsedFn, args: &AttrArgs) -> TokenStream {
 
     let body = &f.body;
     let name_str = format!("{name:?}");
-    // If the user declared a return type, preserve it on the inner closure
-    // so the `?` operator and other Result-returning bodies type-infer
-    // unambiguously.
+    // ユーザーが戻り値型を宣言している場合は、内側のクロージャでもそれを
+    // 保持します。これにより `?` 演算子や、Result を返すその他の本体について
+    // 型推論が一意に決まるようになります。
     let body_ret = if f.return_type.is_empty() {
         String::new()
     } else {
         format!(" -> {}", f.return_type)
     };
 
-    // For async fn, wrap the body in `async move { ... }` and drive it
-    // through propcheck's minimal block_on. Async block return types are
-    // inferred — if the user needs a Result<(), E> body, the type comes
-    // from the trailing `Ok(())` and any `?` propagations.
+    // async fn の場合、本体を `async move { ... }` でラップし、propcheck の
+    // 最小限の block_on で駆動します。async ブロックの戻り値型は推論されます。
+    // ユーザーが Result<(), E> な本体を必要とする場合、型は末尾の `Ok(())` や
+    // `?` による伝播から決定されます。
     let inner_closure = if f.is_async {
         let out_ty = if f.return_type.is_empty() {
             "_".to_string()
@@ -1128,8 +1127,8 @@ fn generate_test_wrapper(f: &ParsedFn, args: &AttrArgs) -> TokenStream {
         )
     };
 
-    // Choose entry point: `run` for default config, `run_with` when any
-    // attribute argument is set.
+    // エントリポイントを選択します。デフォルト設定では `run` を、属性引数が
+    // いずれか設定されている場合は `run_with` を使用します。
     let invocation = if args.any_set() {
         let mut overrides = String::new();
         if let Some(v) = args.cases {
@@ -1183,7 +1182,7 @@ fn generate_test_wrapper(f: &ParsedFn, args: &AttrArgs) -> TokenStream {
 }
 
 // ---------------------------------------------------------------------------
-// helpers
+// ヘルパー
 // ---------------------------------------------------------------------------
 
 fn tt_display(tt: &TokenTree) -> String {

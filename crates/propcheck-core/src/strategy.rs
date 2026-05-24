@@ -1,11 +1,11 @@
-//! Generator combinators (a.k.a. "strategies").
+//! ジェネレータコンビネータ (いわゆる「strategy」) です。
 //!
-//! [`Arbitrary`] is convenient when one canonical generator per type is
-//! enough, but real tests usually need ad-hoc generators ("an `i32` between
-//! 0 and 100", "a non-empty `Vec`", "one of these three values"). This
-//! module provides composable [`Strategy`] values for that purpose.
+//! [`Arbitrary`] は型ごとに 1 つの正規ジェネレータがあれば十分な場合に便利ですが、
+//! 実際のテストではアドホックなジェネレータ (「0 から 100 までの `i32`」、
+//! 「空でない `Vec`」、「これら 3 つのうちのいずれか」など) がよく必要になります。
+//! このモジュールは、そのような目的のために合成可能な [`Strategy`] 値を提供します。
 //!
-//! # Example
+//! # 例
 //!
 //! ```
 //! use propcheck_core::strategy::{any, int_range, vec_of, one_of, just, Strategy, StrategyExt};
@@ -23,31 +23,30 @@ use std::fmt::Debug;
 use std::marker::PhantomData;
 use std::ops::Range;
 
-/// String-generation strategies (`ascii_alphanumeric`, `hex_string`, ...).
+/// 文字列生成 strategy 群 (`ascii_alphanumeric`、`hex_string` など)。
 ///
-/// See the [`strategy_str`](crate::strategy_str) module for the full list.
+/// 完全な一覧については [`strategy_str`](crate::strategy_str) モジュールを参照してください。
 pub mod str {
     pub use crate::strategy_str::*;
 }
 
-/// A composable generator that knows how to produce and shrink values of
-/// type [`Strategy::Value`].
+/// [`Strategy::Value`] 型の値を生成し shrink する方法を知る、合成可能なジェネレータです。
 pub trait Strategy {
-    /// The type of value this strategy produces.
+    /// この strategy が生成する値の型です。
     type Value: Clone + Debug + 'static;
 
-    /// Generates a new value.
+    /// 新しい値を生成します。
     fn new_value<R: Rng + ?Sized>(&self, rng: &mut R, size: usize) -> Self::Value;
 
-    /// Returns a list of strictly smaller candidates for the given value.
-    /// Returning an empty vec means "no shrinks known".
+    /// 与えられた値より厳密に小さい候補のリストを返します。
+    /// 空の vec を返すことは「既知の shrink がない」ことを意味します。
     fn shrink_value(&self, value: &Self::Value) -> Vec<Self::Value>;
 }
 
-/// Combinator helpers on top of any [`Strategy`].
+/// 任意の [`Strategy`] の上に重ねるコンビネータヘルパーです。
 pub trait StrategyExt: Strategy + Sized {
-    /// Transforms generated values through `f`. Shrinking is lost because
-    /// `f` is not generally invertible.
+    /// 生成された値を `f` で変換します。`f` は一般に可逆ではないため、
+    /// shrink は失われます。
     fn map<F, U>(self, f: F) -> Map<Self, F, U>
     where
         F: Fn(Self::Value) -> U + Clone + 'static,
@@ -60,8 +59,8 @@ pub trait StrategyExt: Strategy + Sized {
         }
     }
 
-    /// Keeps only values matching `pred`. The strategy retries up to
-    /// `max_tries` times per call to `new_value` before panicking.
+    /// `pred` に一致する値のみを残します。この strategy は `new_value`
+    /// の呼び出しごとに最大 `max_tries` 回まで再試行し、その後 panic します。
     fn filter<F>(self, pred: F) -> Filter<Self, F>
     where
         F: Fn(&Self::Value) -> bool + 'static,
@@ -73,12 +72,12 @@ pub trait StrategyExt: Strategy + Sized {
         }
     }
 
-    /// Builds a new strategy whose value depends on a previously generated
-    /// value. Useful for "first pick a length, then generate a Vec of that
-    /// length" and similar dependent-generation patterns.
+    /// 先に生成された値に依存する値を持つ新しい strategy を構築します。
+    /// 「まず長さを選び、次にその長さの Vec を生成する」といった依存生成パターンに
+    /// 便利です。
     ///
-    /// Shrinking is not preserved across `flat_map` — see the docs on
-    /// [`FlatMap`].
+    /// shrink は `flat_map` を越えて保持されません。詳細は [`FlatMap`] の
+    /// ドキュメントを参照してください。
     fn flat_map<F, S2>(self, f: F) -> FlatMap<Self, F, S2>
     where
         F: Fn(Self::Value) -> S2 + 'static,
@@ -91,8 +90,8 @@ pub trait StrategyExt: Strategy + Sized {
         }
     }
 
-    /// Erases the concrete type for use in heterogeneous collections like
-    /// [`one_of`].
+    /// [`one_of`] のような異種コレクション内で利用するために、具体的な型を
+    /// 消去します。
     fn boxed(self) -> BoxedStrategy<Self::Value>
     where
         Self: 'static,
@@ -105,12 +104,12 @@ pub trait StrategyExt: Strategy + Sized {
 
 impl<S: Strategy> StrategyExt for S {}
 
-// --- any<T>: defer to Arbitrary ----------------------------------------
+// --- any<T>: Arbitrary に委譲する ----------------------------------------
 
-/// A strategy that defers to the type's [`Arbitrary`] impl.
+/// 型の [`Arbitrary`] 実装に委譲する strategy です。
 pub struct AnyOf<T>(PhantomData<fn() -> T>);
 
-/// Builds an [`AnyOf`] strategy.
+/// [`AnyOf`] strategy を構築します。
 pub fn any<T: Arbitrary + 'static>() -> AnyOf<T> {
     AnyOf(PhantomData)
 }
@@ -125,12 +124,12 @@ impl<T: Arbitrary + 'static> Strategy for AnyOf<T> {
     }
 }
 
-// --- just<T>: constant -------------------------------------------------
+// --- just<T>: 定数 -------------------------------------------------
 
-/// A strategy that always yields the same value.
+/// 常に同じ値を返す strategy です。
 pub struct Just<T>(T);
 
-/// Builds a [`Just`] strategy that always yields `v`.
+/// 常に `v` を返す [`Just`] strategy を構築します。
 pub fn just<T: Clone + Debug + 'static>(v: T) -> Just<T> {
     Just(v)
 }
@@ -145,16 +144,16 @@ impl<T: Clone + Debug + 'static> Strategy for Just<T> {
     }
 }
 
-// --- int_range: numeric in [lo, hi) ------------------------------------
+// --- int_range: [lo, hi) の数値 ------------------------------------
 
-/// A strategy that yields an integer in `[lo, hi)` and shrinks toward
-/// `lo`, or toward `0` when `0 ∈ [lo, hi)`.
+/// `[lo, hi)` の整数を生成し、`lo` に向けて shrink します。
+/// `0 ∈ [lo, hi)` の場合は `0` に向けて shrink します。
 pub struct IntRange<T> {
     lo: T,
     hi: T,
 }
 
-/// Builds an [`IntRange`] strategy from a `Range<T>`.
+/// `Range<T>` から [`IntRange`] strategy を構築します。
 pub fn int_range<T>(r: Range<T>) -> IntRange<T> {
     IntRange {
         lo: r.start,
@@ -214,16 +213,16 @@ impl_int_range!(u32, u64, gen_range_u64);
 impl_int_range!(u64, u64, gen_range_u64);
 impl_int_range!(usize, u64, gen_range_u64);
 
-// --- char_range: a `char` in [lo, hi) -----------------------------------
+// --- char_range: [lo, hi) の `char` -----------------------------------
 
-/// A strategy that yields a `char` in `[lo, hi)`, skipping surrogate
-/// codepoints. Shrinks toward `lo`.
+/// `[lo, hi)` の `char` を生成する strategy です。サロゲートコードポイントは
+/// スキップします。shrink は `lo` に向かいます。
 pub struct CharRange {
     lo: char,
     hi: char,
 }
 
-/// Builds a [`CharRange`] strategy from a `Range<char>`.
+/// `Range<char>` から [`CharRange`] strategy を構築します。
 pub fn char_range(r: Range<char>) -> CharRange {
     assert!(r.start <= r.end, "char_range: lo must be <= hi");
     CharRange {
@@ -240,8 +239,8 @@ impl Strategy for CharRange {
         if hi <= lo {
             return self.lo;
         }
-        // Surrogate codepoints (0xD800..=0xDFFF) are invalid as char; retry
-        // up to ~32 times before falling back to lo to avoid spinning.
+        // サロゲートコードポイント (0xD800..=0xDFFF) は char として無効。
+        // 無限ループを避けるため、約 32 回まで再試行してから lo にフォールバックする。
         for _ in 0..32 {
             let code = rng.gen_range_u64(lo as u64, hi as u64) as u32;
             if let Some(c) = char::from_u32(code) {
@@ -274,24 +273,24 @@ impl Strategy for CharRange {
     }
 }
 
-// --- bytes: variable-length byte slice -------------------------------
+// --- bytes: 可変長バイトスライス -------------------------------
 
-/// A strategy that yields a `Vec<u8>` of length in `len_range`. Sugar
-/// over `vec_of(any::<u8>(), len_range)`.
+/// 長さが `len_range` に収まる `Vec<u8>` を生成する strategy です。
+/// `vec_of(any::<u8>(), len_range)` のシュガーです。
 pub fn bytes(len_range: Range<usize>) -> VecOf<AnyOf<u8>> {
     vec_of(any::<u8>(), len_range)
 }
 
-// --- float ranges ----------------------------------------------------
+// --- 浮動小数点範囲 ----------------------------------------------------
 
-/// A strategy that yields a float uniformly in `[lo, hi)`. Shrinks
-/// toward `0.0` if the range contains it, otherwise toward `lo`.
+/// `[lo, hi)` の範囲で一様に浮動小数点数を生成する strategy です。
+/// 範囲が含む場合は `0.0` に向けて、そうでなければ `lo` に向けて shrink します。
 pub struct FloatRange<T> {
     lo: T,
     hi: T,
 }
 
-/// Builds an [`f32`] range strategy.
+/// [`f32`] の範囲 strategy を構築します。
 pub fn f32_range(r: Range<f32>) -> FloatRange<f32> {
     assert!(r.start <= r.end, "f32_range: lo must be <= hi");
     FloatRange {
@@ -300,7 +299,7 @@ pub fn f32_range(r: Range<f32>) -> FloatRange<f32> {
     }
 }
 
-/// Builds an [`f64`] range strategy.
+/// [`f64`] の範囲 strategy を構築します。
 pub fn f64_range(r: Range<f64>) -> FloatRange<f64> {
     assert!(r.start <= r.end, "f64_range: lo must be <= hi");
     FloatRange {
@@ -317,7 +316,7 @@ macro_rules! impl_float_range {
                 if self.lo >= self.hi {
                     return self.lo;
                 }
-                // Uniform in [0, 1) via u64 → float conversion.
+                // u64 → float 変換を経て [0, 1) の一様分布。
                 let bits = rng.next_u64();
                 let frac = (bits as $t) / (u64::MAX as $t);
                 self.lo + frac * (self.hi - self.lo)
@@ -335,8 +334,8 @@ macro_rules! impl_float_range {
                 let mut delta = *value - target;
                 loop {
                     delta /= (2.0 as $t);
-                    // Stop when delta is tiny enough that the shrink would
-                    // be indistinguishable from the input.
+                    // shrink 結果が入力と区別できなくなるほど delta が
+                    // 小さくなったら停止する。
                     if delta.abs() < <$t>::EPSILON * value.abs().max(1.0) {
                         break;
                     }
@@ -358,15 +357,15 @@ macro_rules! impl_float_range {
 impl_float_range!(f32);
 impl_float_range!(f64);
 
-// --- one_of: uniform choice from a list of strategies ------------------
+// --- one_of: strategy リストからの一様選択 ------------------
 
-/// A strategy that picks uniformly between sub-strategies. All sub-strategies
-/// must yield the same value type.
+/// サブ strategy 間で一様にいずれかを選択する strategy です。
+/// すべてのサブ strategy は同じ値型を生成する必要があります。
 pub struct OneOf<S> {
     choices: Vec<S>,
 }
 
-/// Builds a [`OneOf`] strategy.
+/// [`OneOf`] strategy を構築します。
 pub fn one_of<S: Strategy>(choices: Vec<S>) -> OneOf<S> {
     assert!(!choices.is_empty(), "one_of: choices must be non-empty");
     OneOf { choices }
@@ -379,8 +378,8 @@ impl<S: Strategy> Strategy for OneOf<S> {
         self.choices[idx].new_value(rng, size)
     }
     fn shrink_value(&self, value: &S::Value) -> Vec<S::Value> {
-        // Without remembering which branch produced `value`, the best we can
-        // do is collect every branch's shrinks.
+        // どの分岐が `value` を生成したかを記憶していないため、できる最善は
+        // すべての分岐の shrink を収集することである。
         let mut out = Vec::new();
         for c in &self.choices {
             out.extend(c.shrink_value(value));
@@ -389,15 +388,15 @@ impl<S: Strategy> Strategy for OneOf<S> {
     }
 }
 
-// --- weighted_one_of: like one_of but with integer weights -------------
+// --- weighted_one_of: one_of に整数の重みを付けたもの -------------
 
-/// A strategy that picks between sub-strategies with given integer weights.
+/// 与えられた整数の重みでサブ strategy 間を選択する strategy です。
 pub struct WeightedOneOf<S> {
     choices: Vec<(u32, S)>,
     total_weight: u64,
 }
 
-/// Builds a [`WeightedOneOf`] strategy. Each pair is `(weight, strategy)`.
+/// [`WeightedOneOf`] strategy を構築します。各ペアは `(weight, strategy)` です。
 pub fn weighted_one_of<S: Strategy>(choices: Vec<(u32, S)>) -> WeightedOneOf<S> {
     assert!(
         !choices.is_empty(),
@@ -433,18 +432,18 @@ impl<S: Strategy> Strategy for WeightedOneOf<S> {
     }
 }
 
-// --- vec_of: variable-length Vec of element strategy -------------------
+// --- vec_of: 要素 strategy の可変長 Vec -------------------
 
-/// A strategy that yields a `Vec<S::Value>` of length in `len_range`. The
-/// vector shrinks length-first, then elements, while keeping length at
-/// least `min_len`.
+/// 長さが `len_range` に収まる `Vec<S::Value>` を生成する strategy です。
+/// ベクタは長さを優先して shrink し、その後要素を shrink します。
+/// 長さは少なくとも `min_len` を保ちます。
 pub struct VecOf<S> {
     element: S,
     min_len: usize,
     max_len: usize,
 }
 
-/// Builds a [`VecOf`] strategy.
+/// [`VecOf`] strategy を構築します。
 pub fn vec_of<S: Strategy>(element: S, len_range: Range<usize>) -> VecOf<S> {
     assert!(
         len_range.start <= len_range.end,
@@ -471,7 +470,7 @@ impl<S: Strategy> Strategy for VecOf<S> {
     }
     fn shrink_value(&self, value: &Vec<S::Value>) -> Vec<Vec<S::Value>> {
         let mut out = Vec::new();
-        // Shorter prefixes while respecting min_len.
+        // min_len を尊重しつつ短い接頭辞を生成する。
         if value.len() > self.min_len {
             if self.min_len == 0 {
                 out.push(Vec::new());
@@ -484,7 +483,7 @@ impl<S: Strategy> Strategy for VecOf<S> {
                 }
             }
         }
-        // Shrink each element using the inner strategy.
+        // 内部 strategy を使って各要素を shrink する。
         for i in 0..value.len() {
             for s in self.element.shrink_value(&value[i]) {
                 let mut v = value.clone();
@@ -496,9 +495,9 @@ impl<S: Strategy> Strategy for VecOf<S> {
     }
 }
 
-// --- tuple of strategies -----------------------------------------------
+// --- strategy のタプル -----------------------------------------------
 
-/// A strategy that combines two strategies and yields their product.
+/// 2 つの strategy を結合し、その直積を生成する strategy です。
 pub struct Tuple2<A, B>(pub A, pub B);
 
 impl<A: Strategy, B: Strategy> Strategy for Tuple2<A, B> {
@@ -518,14 +517,14 @@ impl<A: Strategy, B: Strategy> Strategy for Tuple2<A, B> {
     }
 }
 
-/// Builds a [`Tuple2`] strategy.
+/// [`Tuple2`] strategy を構築します。
 pub fn tuple<A: Strategy, B: Strategy>(a: A, b: B) -> Tuple2<A, B> {
     Tuple2(a, b)
 }
 
-// --- Map combinator ----------------------------------------------------
+// --- Map コンビネータ ----------------------------------------------------
 
-/// See [`StrategyExt::map`].
+/// [`StrategyExt::map`] を参照してください。
 pub struct Map<S, F, U> {
     inner: S,
     f: F,
@@ -543,19 +542,19 @@ where
         (self.f)(self.inner.new_value(rng, size))
     }
     fn shrink_value(&self, _value: &U) -> Vec<U> {
-        // Without an inverse for f, no shrinks are available.
+        // f の逆関数がないため、利用可能な shrink はない。
         Vec::new()
     }
 }
 
-// --- FlatMap combinator -----------------------------------------------
+// --- FlatMap コンビネータ -----------------------------------------------
 
-/// See [`StrategyExt::flat_map`].
+/// [`StrategyExt::flat_map`] を参照してください。
 ///
-/// `FlatMap` cannot shrink because the value held has lost its connection
-/// to the "outer" value that was fed into `f`. If you need shrinking on
-/// dependent generation, define a custom [`Strategy`] manually that
-/// preserves whatever state shrinking needs.
+/// `FlatMap` は shrink できません。なぜなら、保持される値は `f` に渡された
+/// 「外側」の値とのつながりを失っているからです。依存生成に対する shrink が
+/// 必要であれば、shrink に必要な状態を保持するカスタムの [`Strategy`] を
+/// 手動で定義してください。
 pub struct FlatMap<S, F, S2> {
     inner: S,
     f: F,
@@ -579,9 +578,9 @@ where
     }
 }
 
-// --- Filter combinator -------------------------------------------------
+// --- Filter コンビネータ -------------------------------------------------
 
-/// See [`StrategyExt::filter`].
+/// [`StrategyExt::filter`] を参照してください。
 pub struct Filter<S, F> {
     inner: S,
     pred: F,
@@ -589,8 +588,8 @@ pub struct Filter<S, F> {
 }
 
 impl<S, F> Filter<S, F> {
-    /// Adjusts how many times the filter will retry before panicking when
-    /// it cannot produce a value satisfying the predicate.
+    /// 述語を満たす値を生成できないときに panic するまでに、フィルタが
+    /// 何回再試行するかを調整します。
     pub fn max_tries(mut self, n: usize) -> Self {
         self.max_tries = n;
         self
@@ -624,15 +623,14 @@ where
     }
 }
 
-// --- recursive: bounded-depth recursive strategies --------------------
+// --- recursive: 深さ制限付き再帰 strategy --------------------
 
-/// Builds a recursive strategy by stacking `inner` over `leaf` `max_depth`
-/// times. Used by [`crate::strategy::recursive`] and the
-/// `prop_recursive!` macro in the `propcheck` crate.
+/// `leaf` の上に `inner` を `max_depth` 回スタックして再帰 strategy を
+/// 構築します。[`crate::strategy::recursive`] および `propcheck` クレートの
+/// `prop_recursive!` マクロで使用されます。
 ///
-/// `inner` is invoked for each level with the strategy built so far — at
-/// the top level it sees a strategy that already mixes inner and leaf
-/// cases all the way down to the leaves.
+/// `inner` は各階層で、これまでに構築された strategy を引数に呼び出されます。
+/// 最上位では、既に内部ケースと葉ケースを葉まで混在させた strategy を受け取ります。
 pub fn recursive<L, I, R, T>(leaf: L, inner: I, max_depth: usize) -> BoxedStrategy<T>
 where
     L: Strategy<Value = T> + 'static,
@@ -647,10 +645,10 @@ where
     current
 }
 
-// --- BoxedStrategy: type erasure ---------------------------------------
+// --- BoxedStrategy: 型消去 ---------------------------------------
 
-/// A heap-allocated, type-erased strategy. Useful for collecting
-/// heterogeneous strategies into a single [`Vec`] for [`one_of`].
+/// ヒープ確保された、型消去された strategy です。[`one_of`] 用に異種の
+/// strategy を 1 つの [`Vec`] にまとめるのに便利です。
 pub struct BoxedStrategy<T: Clone + Debug + 'static> {
     inner: Box<dyn ErasedStrategy<Value = T>>,
 }
@@ -658,8 +656,8 @@ pub struct BoxedStrategy<T: Clone + Debug + 'static> {
 impl<T: Clone + Debug + 'static> Strategy for BoxedStrategy<T> {
     type Value = T;
     fn new_value<R: Rng + ?Sized>(&self, rng: &mut R, size: usize) -> T {
-        // Wrap the (possibly unsized) `R` in a sized adapter so the result
-        // can be coerced to `&mut dyn Rng` for the object-safe call.
+        // (サイズが不定かもしれない) `R` を sized なアダプタでラップし、
+        // オブジェクト安全な呼び出しのために結果を `&mut dyn Rng` へ強制変換できるようにする。
         let mut adapter = SizedRngRef { inner: rng };
         self.inner.dyn_new_value(&mut adapter, size)
     }
@@ -668,9 +666,10 @@ impl<T: Clone + Debug + 'static> Strategy for BoxedStrategy<T> {
     }
 }
 
-/// Object-safe sibling of [`Strategy`] used by [`BoxedStrategy`]. Method
-/// names are deliberately distinct from `Strategy`'s so the blanket impl
-/// below doesn't shadow regular [`Strategy`] calls in user code.
+/// [`BoxedStrategy`] が使用する [`Strategy`] のオブジェクト安全な兄弟トレイトです。
+/// メソッド名は意図的に `Strategy` のものと異なるようにしてあります。
+/// これは、下のブランケット実装がユーザーコード内の通常の [`Strategy`] 呼び出しを
+/// 隠蔽しないようにするためです。
 trait ErasedStrategy {
     type Value: Clone + Debug + 'static;
     fn dyn_new_value(&self, rng: &mut dyn Rng, size: usize) -> Self::Value;
@@ -687,8 +686,8 @@ impl<S: Strategy> ErasedStrategy for S {
     }
 }
 
-/// Sized wrapper around `&mut R` so it can be coerced into `&mut dyn Rng`
-/// even when `R: ?Sized`. The wrapper itself is always pointer-sized.
+/// `R: ?Sized` の場合でも `&mut dyn Rng` に強制変換できるよう、`&mut R` を
+/// 囲む sized なラッパーです。ラッパー自体は常にポインタサイズです。
 struct SizedRngRef<'a, R: Rng + ?Sized> {
     inner: &'a mut R,
 }
@@ -770,7 +769,7 @@ mod tests {
         let mut rng = r();
         let values: Vec<i32> = (0..200).map(|_| s.new_value(&mut rng, 0)).collect();
         assert!(values.iter().all(|v| [1, 2, 3].contains(v)));
-        // All three should appear with high probability.
+        // 3 つすべてが高い確率で出現するはず。
         assert!(values.contains(&1));
         assert!(values.contains(&2));
         assert!(values.contains(&3));
@@ -801,7 +800,7 @@ mod tests {
         for _ in 0..100 {
             let v = s.new_value(&mut rng, 0);
             assert!((0..100).contains(&v));
-            // It should be a perfect square of something in 0..10.
+            // 0..10 の何らかの完全平方数であるはず。
             let root = (v as f64).sqrt() as i32;
             assert!(root * root == v);
         }
@@ -815,7 +814,7 @@ mod tests {
             any::<i32>().filter(|n| *n < -1000).boxed(),
         ]);
         let mut rng = r();
-        // Exercise the API; the values can be in three disjoint regions.
+        // API を動作確認する。値は 3 つの互いに素な領域のいずれかに入りうる。
         for _ in 0..50 {
             let _ = s.new_value(&mut rng, 50);
         }
