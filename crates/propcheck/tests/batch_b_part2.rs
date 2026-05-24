@@ -61,9 +61,9 @@ fn differential_catches_disagreement() {
 
 #[test]
 fn exhaustive_shrink_mode_runs_to_completion() {
-    // モード設定が反映され、妥当なshrink結果が得られることを確認するだけの
+    // モード設定が反映され、妥当な shrink 結果が得られることを確認するだけの
     // テストです（この自明なプロパティでは、両モードとも100に収束するため、
-    // Greedyの結果と一致するはずです）。
+    // Greedy の結果と一致するはずです）。
     let cfg = Config {
         shrink_mode: ShrinkMode::Exhaustive,
         ..no_replay_cfg(3)
@@ -76,7 +76,7 @@ fn exhaustive_shrink_mode_runs_to_completion() {
 #[test]
 fn exhaustive_shrink_mode_for_nested_data() {
     // Vec<i32>のプロパティは、いずれかの要素が50を超えると失敗します。
-    // Greedyとexhaustiveのいずれも[51]に到達するはずです。整合性チェックとして、
+    // Greedy と exhaustive のいずれも[51]に到達するはずです。整合性チェックとして、
     // 両モードが同じ結果を生成することをここで確認します。
     let outcome_greedy = forall_with(
         Config {

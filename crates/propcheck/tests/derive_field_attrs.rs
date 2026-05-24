@@ -1,7 +1,7 @@
-//! derive上の`#[arbitrary(strategy = ...)]`フィールド属性のテストです。
+//! derive 上の`#[arbitrary(strategy = ...)]`フィールド属性のテストです。
 //!
-//! 文字列リテラル形式と素の式形式の両方を動作確認し、加えてstrategy越しの
-//! shrinkも検証します。
+//! 文字列リテラル形式と素の式形式の両方を動作確認し、加えて strategy 越しの
+//! shrink も検証します。
 
 use propcheck::strategy::{int_range, str, vec_of, Strategy, StrategyExt};
 use propcheck::{forall_with, run, Arbitrary, Config, XorShift64};
@@ -24,7 +24,7 @@ struct ConfigStr {
     name: String,
     #[arbitrary(strategy = "int_range(1024u16..65535)")]
     port: u16,
-    // こちらはデフォルトのArbitraryを使用。
+    // こちらはデフォルトの Arbitrary を使用。
     body: Vec<u8>,
 }
 
@@ -34,7 +34,7 @@ fn string_literal_strategy_constrains_field_values() {
         propcheck::prop_assert!(!c.name.is_empty());
         propcheck::prop_assert!(c.name.chars().all(|c| c.is_ascii_alphanumeric()));
         propcheck::prop_assert!(c.port >= 1024);
-        // bodyは制約なし。Vecであることだけを確認します。
+        // body は制約なし。Vec であることだけを確認します。
         let _ = c.body.len();
         true
     });
@@ -78,7 +78,7 @@ fn tuple_struct_field_attrs_work() {
     }
 }
 
-// --- フィールド属性つきのenumバリアント ---------------------------------
+// --- フィールド属性つきの enumvariant ---------------------------------
 
 #[derive(Arbitrary, Debug, Clone, PartialEq)]
 enum Message {
@@ -106,7 +106,7 @@ fn enum_variant_field_attrs_constrain_payload() {
     });
 }
 
-// --- shrinkがstrategyを通じて伝播する ----------------------------
+// --- shrink が strategy を通じて伝播する ----------------------------
 
 #[derive(Arbitrary, Debug, Clone, PartialEq)]
 struct Constrained {
@@ -116,18 +116,18 @@ struct Constrained {
 
 #[test]
 fn shrink_uses_strategy_not_default_arbitrary() {
-    // プロパティ: valueは決して50を超えない。多くのケースで失敗し、
-    // shrinkされた値は50となるはずです（int_range strategyは10に向かってshrink
+    // プロパティ: value は決して50を超えない。多くのケースで失敗し、
+    // shrink された値は50となるはずです（int_range strategy は10に向かって shrink
     // し、プロパティが最初に失敗する境界が50です）。
     let outcome = forall_with(cfg(11), |c: &Constrained| c.value <= 50);
     assert!(outcome.is_failed());
     let shrunk = outcome.shrunk().unwrap();
-    // strategyは10に向かってshrinkし、それより下には行きません。そのため
-    // shrunk.valueは失敗境界の50となります。
+    // strategy は10に向かって shrink し、それより下には行きません。そのため
+    // shrunk.value は失敗境界の50となります。
     assert_eq!(shrunk.value, 51);
 }
 
-// --- strategy式はユーザ定義関数を呼べる -------------------
+// --- strategy 式はユーザ定義関数を呼べる -------------------
 
 fn small_evens() -> impl Strategy<Value = i32> {
     int_range(0i32..1000).filter(|n| n % 2 == 0)
@@ -148,7 +148,7 @@ fn field_strategy_can_call_user_fns() {
     });
 }
 
-// --- vec_ofとの組み合わせ ------------------------------------------
+// --- vec_of との組み合わせ ------------------------------------------
 
 #[derive(Arbitrary, Debug, Clone, PartialEq)]
 struct Bag {

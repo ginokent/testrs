@@ -1,7 +1,7 @@
 //! propcheck 向けに手書きされた proc-macro 群です。
 //!
 //! このクレートはコンパイラ提供の `proc_macro` クレートのみに依存しており、`syn`
-//! や `quote` といった外部依存は持ちません。パーサーは小さく、実際に受け入れる
+//! や `quote` といった外部依存は持ちません。parser ーは小さく、実際に受け入れる
 //! 入力（struct と自由関数）に合わせて調整されており、Rust 構文のあらゆる詳細を
 //! サポートするのではなく、意図的に明確なエラーを返すようになっています。
 //!
@@ -303,7 +303,7 @@ fn parse_enum_variants(stream: TokenStream) -> Result<Vec<Variant>, String> {
                 ))
             }
         };
-        // バリアント名のあとには、任意の `(...)`、`{...}`、あるいはそのまま `,` または末尾が続きます。
+        // variant 名のあとには、任意の `(...)`、`{...}`、あるいはそのまま `,` または末尾が続きます。
         let fields = match iter.peek() {
             Some(TokenTree::Group(g)) if g.delimiter() == Delimiter::Parenthesis => {
                 let g = match iter.next().unwrap() {
@@ -512,7 +512,7 @@ fn gen_field_value(strategy: &Option<String>) -> String {
     }
 }
 
-/// 単一フィールドの shrink 候補を列挙するイテレータを生成する Rust の式を
+/// 単一フィールドの shrink 候補を列挙する iterator を生成する Rust の式を
 /// 返します。`field_access` は現在の値の取得元です（例: `self.foo` や
 /// `__f0`）。
 fn gen_field_shrink_iter(strategy: &Option<String>, field_access: &str) -> String {
@@ -718,7 +718,7 @@ fn generate_arbitrary_impl_enum(e: &ParsedEnum) -> TokenStream {
     let self_ty = format!("{name}{generics_use}");
     let n_variants = e.variants.len();
 
-    // 最もシンプルなバリアントを見つけます（unit を優先し、次にアリティの
+    // 最もシンプルな variant を見つけます（unit を優先し、次にアリティの
     // 小さいものを選びます）。これは shrink 時の「collapse」対象として使用されます。
     let simplest_idx = e
         .variants
@@ -732,7 +732,7 @@ fn generate_arbitrary_impl_enum(e: &ParsedEnum) -> TokenStream {
         .map(|(i, _)| i)
         .unwrap_or(0);
 
-    // --- arbitrary(): バリアントを一様に選び、そのフィールドを埋めます ---
+    // --- arbitrary(): variant を一様に選び、そのフィールドを埋めます ---
     let mut arms_gen = String::new();
     for (i, v) in e.variants.iter().enumerate() {
         let vname = &v.name;
@@ -759,14 +759,14 @@ fn generate_arbitrary_impl_enum(e: &ParsedEnum) -> TokenStream {
         arms_gen.push_str(&format!("            {i}u64 => {body},\n"));
     }
 
-    // --- shrink(): バリアントごとのフィールド shrink と任意の collapse ---
+    // --- shrink(): variant ごとのフィールド shrink と任意の collapse ---
     let mut arms_shrink = String::new();
     for v in e.variants.iter() {
         let vname = &v.name;
         let (pat, body) = match &v.fields {
             Fields::Unit => (
                 format!("{name}::{vname}"),
-                String::from("/* unit バリアントには shrink がありません */"),
+                String::from("/* unit variant には shrink がありません */"),
             ),
             Fields::Unnamed(fs) => {
                 let pat_args: Vec<String> = (0..fs.len()).map(|i| format!("__f{i}")).collect();
@@ -819,7 +819,7 @@ fn generate_arbitrary_impl_enum(e: &ParsedEnum) -> TokenStream {
                             ));
                         }
                     }
-                    // 上記と同様、enum の named バリアントについても `&&` に
+                    // 上記と同様、enum の named variant についても `&&` に
                     // 関する考慮が必要です。フィールドの束縛はすでに参照です。
                     let shrink_iter = if let Some(expr) = &fi.strategy {
                         format!(
@@ -840,8 +840,8 @@ fn generate_arbitrary_impl_enum(e: &ParsedEnum) -> TokenStream {
         ));
     }
 
-    // 最もシンプルなバリアントへ collapse します（そのバリアントが unit
-    // バリアントであり、かつ現在のバリアントがそれと異なる場合に限ります）。
+    // 最もシンプルな variant へ collapse します（その variant が unit
+    // variant であり、かつ現在の variant がそれと異なる場合に限ります）。
     let collapse = if matches!(e.variants[simplest_idx].fields, Fields::Unit) {
         let target = &e.variants[simplest_idx].name;
         format!(
@@ -885,9 +885,9 @@ fn generate_arbitrary_impl_enum(e: &ParsedEnum) -> TokenStream {
 ///
 /// 任意指定の `key = literal` 引数を受け付けます:
 /// - `cases = N`         — 成功させるケース総数（デフォルト 100）
-/// - `seed = N`          — 固定の PRNG シード
+/// - `seed = N`          — 固定の PRNG seed
 /// - `max_shrinks = N`   — shrink ステップの上限
-/// - `max_size = N`      — ジェネレータサイズの上限
+/// - `max_size = N`      — generator サイズの上限
 /// - `max_discards = N`  — abort 前の discard 上限
 /// - `max_skips = N`     — abort 前の skip 上限
 #[proc_macro_attribute]
@@ -1087,7 +1087,7 @@ fn generate_test_wrapper(f: &ParsedFn, args: &AttrArgs) -> TokenStream {
 
     let body = &f.body;
     let name_str = format!("{name:?}");
-    // ユーザーが戻り値型を宣言している場合は、内側のクロージャでもそれを
+    // ユーザーが戻り値型を宣言している場合は、内側の closure でもそれを
     // 保持します。これにより `?` 演算子や、Result を返すその他の本体について
     // 型推論が一意に決まるようになります。
     let body_ret = if f.return_type.is_empty() {

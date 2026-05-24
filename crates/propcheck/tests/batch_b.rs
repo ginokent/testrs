@@ -1,5 +1,5 @@
-//! Batch 1+2で追加された機能のテスト: 文字列strategy、prop_compose!、
-//! prop_assert_matches!、prop_skip!、prop_with_context!、Outcomeのアクセサ。
+//! Batch 1+2で追加された機能のテスト: 文字列 strategy、prop_compose!、
+//! prop_assert_matches!、prop_skip!、prop_with_context!、Outcome の accessor。
 
 use propcheck::strategy::{int_range, str};
 use propcheck::{
@@ -217,7 +217,7 @@ fn prop_compose_strategy_produces_valid_users() {
 
 #[test]
 fn prop_compose_can_drive_run_strategy() {
-    // strategyがランナーに組み込めることを確認するだけのテストです。
+    // strategy がランナーに組み込めることを確認するだけのテストです。
     run_strategy_with(
         "compose drives runner",
         user_strategy(),

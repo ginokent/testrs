@@ -1,6 +1,6 @@
 //! モデルベース / 状態機械のプロパティテストです。
 //!
-//! コンテナ、パーサー、キャッシュ、簡単な仮想マシンなどの、状態を持つ API
+//! コンテナ、parser ー、キャッシュ、簡単な仮想マシンなどの、状態を持つ API
 //! のテストに役立ちます。以下を定義します。
 //!
 //! 1. テスト対象の状態（多くの場合、タプル `(system_under_test, reference_model)`）。
@@ -56,7 +56,7 @@ use crate::panic_hook::SilentPanicHook;
 use crate::regression;
 use crate::{Classifications, Config, Outcome};
 
-/// このトレイトを実装して、テスト対象システムの状態、操作、invariant を
+/// この trait を実装して、テスト対象システムの状態、操作、invariant を
 /// 記述します。
 pub trait StateMachine {
     /// 状態の型。通常は (system_under_test, model) のタプルです。
@@ -156,7 +156,7 @@ fn run_sm_loop<M: StateMachine + 'static>(
     cfg: &Config,
     regression_seeds: &[u64],
 ) -> Outcome<Vec<M::Operation>> {
-    // 最初にリグレッション用シードをリプレイします。
+    // 最初に regression 用 seed をリプレイします。
     for &rseed in regression_seeds {
         let mut rng = XorShift64::seed_from_u64(rseed);
         let sequence: Vec<M::Operation> = generate_sequence::<M, _>(&mut rng, cfg.max_size);

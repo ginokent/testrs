@@ -1,10 +1,10 @@
-//! 仕込まれたバグのあるパーサーに対してファザーを実行する小さなデモです。
+//! 仕込まれたバグのある parser ーに対して fuzzer を実行する小さなデモです。
 //! `cargo run --release --example find_crash -p propcheck-fuzz` で実行します。
 
 use propcheck_fuzz::{fuzz, FuzzConfig};
 
-/// 「本物の」パーサーの代わりとして、マジックバイト 0xCC を含む任意の入力で
-/// panic します。カバレッジフィードバックがないため、ファザーは生のランダム
+/// 「本物の」parser ーの代わりとして、マジックバイト 0xCC を含む任意の入力で
+/// panic します。カバレッジフィードバックがないため、fuzzer は生のランダム
 /// バイトに頼ります。1 バイトのシグネチャであれば、数万回のイテレーション以内に
 /// 確実に発見できます。
 fn parser(input: &[u8]) {
@@ -23,8 +23,8 @@ fn main() {
     let cfg = FuzzConfig {
         iterations: 200_000,
         max_input_len: 128,
-        // コーパスを空でない入力でシードすると、ミューテーターに噛みごたえの
-        // ある材料を与えられます。カバレッジフィードバックがないため、ファザーは
+        // corpus を空でない入力で seed すると、mutator ーに噛みごたえの
+        // ある材料を与えられます。カバレッジフィードバックがないため、fuzzer は
         // 興味深い状態に到達するために初期素材に依存します。
         initial_corpus: vec![b"the quick brown fox jumps over the lazy dog".to_vec()],
         ..FuzzConfig::default()

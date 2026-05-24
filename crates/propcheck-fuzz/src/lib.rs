@@ -1,22 +1,22 @@
-//! インプロセスのミューテーションファザーです。
+//! インプロセスの mutation fuzzer です。
 //!
 //! ミューテートされたバイトバッファのストリームでターゲット関数を駆動し、
-//! panic をクラッシュとして捕捉し、panic を引き起こし続けるバイトを繰り返し
-//! 削除することでクラッシュ入力を最小化します。
+//! panic を crash として捕捉し、panic を引き起こし続けるバイトを繰り返し
+//! 削除することで crash 入力を最小化します。
 //!
 //! 機能:
 //!
-//! - **クラッシュの重複排除と継続**: クラッシュを発見した後、
-//!   [`FuzzConfig::continue_after_crash`] を設定すると、追加の異なるクラッシュ
+//! - **crash の重複排除と継続**: crash を発見した後、
+//!   [`FuzzConfig::continue_after_crash`] を設定すると、追加の異なる crash
 //!   を探し続けます。重複排除はデフォルトで panic メッセージに基づきます。
 //! - **辞書**: 事前に与えられたバイトスライス（マジックナンバー、キーワード、
 //!   プロトコルトークン）が高い確率でミューテートされた入力にスプライス
-//!   され、カバレッジフィードバックなしでも素朴なミューテーターが興味深い
+//!   され、カバレッジフィードバックなしでも素朴な mutator ーが興味深い
 //!   状態に到達するのを助けます。
-//! - **コーパス永続化**: [`FuzzConfig::corpus_dir`] をディレクトリに指定すると、
-//!   ファザーは起動時にエントリを読み込み、新たに発見された興味深い入力を
+//! - **corpus 永続化**: [`FuzzConfig::corpus_dir`] をディレクトリに指定すると、
+//!   fuzzer は起動時にエントリを読み込み、新たに発見された興味深い入力を
 //!   時間とともに追記していきます。
-//! - **クラッシュ永続化**: [`FuzzConfig::crash_dir`] は各ユニークなクラッシュを
+//! - **crash 永続化**: [`FuzzConfig::crash_dir`] は各ユニークな crash を
 //!   メッセージのハッシュに基づく名前のファイルに保存するため、再現用入力が
 //!   実行をまたいで蓄積されます。
 //!
@@ -48,38 +48,38 @@ pub use propcheck_core::{Arbitrary, Rng, XorShift64};
 mod typed;
 pub use typed::{fuzz_typed, TypedFuzzConfig};
 
-/// ファジング実行向けの調整可能パラメータです。
+/// fuzzing 実行向けの調整可能パラメータです。
 #[derive(Debug, Clone)]
 pub struct FuzzConfig {
     /// 諦めるまでに実行する入力の最大数です。
     pub iterations: usize,
     /// 生成される任意の入力の最大サイズ（バイト単位）です。
     pub max_input_len: usize,
-    /// PRNG のシードです。デフォルトは `PROPCHECK_FUZZ_SEED` または時計エントロピーです。
+    /// PRNG の seed です。デフォルトは `PROPCHECK_FUZZ_SEED` または時計エントロピーです。
     pub seed: u64,
-    /// 初期コーパスです。これと `corpus_dir` の両方が空である場合は、
+    /// 初期 corpus です。これと `corpus_dir` の両方が空である場合は、
     /// 空の入力が追加されます。
     pub initial_corpus: Vec<Vec<u8>>,
-    /// クラッシュ入力の最小化に費やす試行の最大数です。
+    /// crash 入力の最小化に費やす試行の最大数です。
     pub minimize_steps: usize,
-    /// `true` の場合、ファジング中の panic フックを無音化し、クラッシュの
+    /// `true` の場合、fuzzing 中の panic フックを無音化し、crash の
     /// バックトレースが端末に大量出力されないようにします。
     pub silence_panic_hook: bool,
-    /// `true` の場合、ファザーはクラッシュ発見後も実行を継続し、追加の
-    /// 異なるクラッシュを発見します（重複排除の対象となります）。
+    /// `true` の場合、fuzzer は crash 発見後も実行を継続し、追加の
+    /// 異なる crash を発見します（重複排除の対象となります）。
     pub continue_after_crash: bool,
-    /// `true` の場合、同一の panic メッセージを持つクラッシュは 1 度だけ報告されます。
+    /// `true` の場合、同一の panic メッセージを持つ crash は 1 度だけ報告されます。
     pub dedup_by_message: bool,
-    /// 辞書ミューテーションによって入力にスプライスされるバイトスライスです。
+    /// 辞書 mutation によって入力にスプライスされるバイトスライスです。
     /// プロトコル / フォーマットのマジックナンバーやキーワードに便利です。
     pub dictionary: Vec<Vec<u8>>,
-    /// 起動時にコーパスエントリを読み込み、実行中に新しい「興味深い」入力を
+    /// 起動時に corpus エントリを読み込み、実行中に新しい「興味深い」入力を
     /// 追記するディレクトリです。ファイル名はその内容のハッシュに基づきます。
-    /// `None` はコーパス永続化を無効にします。
+    /// `None` は corpus 永続化を無効にします。
     pub corpus_dir: Option<PathBuf>,
-    /// 各ユニークなクラッシュの再現用ファイルを保存するディレクトリです。
+    /// 各ユニークな crash の再現用ファイルを保存するディレクトリです。
     /// ファイル名は panic メッセージのハッシュから導出されます。
-    /// `None` はクラッシュ永続化を無効にします。
+    /// `None` は crash 永続化を無効にします。
     pub crash_dir: Option<PathBuf>,
 }
 
@@ -110,32 +110,32 @@ fn env_seed() -> u64 {
     XorShift64::from_entropy().state()
 }
 
-/// ファジング実行の結果です。
+/// fuzzing 実行の結果です。
 #[derive(Debug, Clone)]
 pub struct FuzzReport {
     /// 完了したターゲット呼び出しの回数です。
     pub iterations: usize,
-    /// 使用された PRNG のシードで、再現に適しています。
+    /// 使用された PRNG の seed で、再現に適しています。
     pub seed: u64,
-    /// 発見されたすべてのユニークなクラッシュを、最初に発見された順に並べたものです。
+    /// 発見されたすべてのユニークな crash を、最初に発見された順に並べたものです。
     pub failures: Vec<Failure>,
 }
 
 impl FuzzReport {
-    /// 最初に発見されたクラッシュ、または存在しない場合は `None` です。
+    /// 最初に発見された crash、または存在しない場合は `None` です。
     pub fn failure(&self) -> Option<&Failure> {
         self.failures.first()
     }
 }
 
-/// ファザーが発見したクラッシュ入力です。
+/// fuzzer が発見した crash 入力です。
 #[derive(Debug, Clone)]
 pub struct Failure {
-    /// 最小化されたクラッシュ入力です。
+    /// 最小化された crash 入力です。
     pub input: Vec<u8>,
     /// panic メッセージ（または `<non-string panic payload>`）です。
     pub message: String,
-    /// クラッシュが発見された 1 始まりのイテレーションインデックスです。
+    /// crash が発見された 1 始まりのイテレーションインデックスです。
     pub iteration: usize,
 }
 
@@ -161,7 +161,7 @@ where
 {
     let mut rng = XorShift64::seed_from_u64(cfg.seed);
 
-    // コーパスを読み込みます: initial_corpus と corpus_dir の内容の和集合です。
+    // corpus を読み込みます: initial_corpus と corpus_dir の内容の和集合です。
     let mut corpus: Vec<Vec<u8>> = cfg.initial_corpus.clone();
     if let Some(dir) = &cfg.corpus_dir {
         corpus.extend(load_corpus_dir(dir));
@@ -169,7 +169,7 @@ where
     if corpus.is_empty() {
         corpus.push(Vec::new());
     }
-    // 既にディスクへ保存したコーパスの内容を（ハッシュで）追跡します。
+    // 既にディスクへ保存した corpus の内容を（ハッシュで）追跡します。
     let mut persisted_hashes: BTreeSet<u64> = corpus.iter().map(|e| fnv_hash(e)).collect();
 
     let mut failures: Vec<Failure> = Vec::new();
@@ -207,9 +207,9 @@ where
             }
             Err(message) => {
                 if cfg.dedup_by_message && !seen_crash_messages.insert(message.clone()) {
-                    continue; // 重複クラッシュなので無視します
+                    continue; // 重複 crash なので無視します
                 } else if !cfg.dedup_by_message {
-                    // それでも、この実行中に同じクラッシュを何度も再保存
+                    // それでも、この実行中に同じ crash を何度も再保存
                     // するのは避けたいので、いずれにせよメッセージで追跡します。
                     seen_crash_messages.insert(message.clone());
                 }
@@ -363,7 +363,7 @@ fn mutate<R: Rng + ?Sized>(
                 input.swap(i, j);
                 true
             }
-            // 辞書ミューテーション: 挿入と上書きです。
+            // 辞書 mutation: 挿入と上書きです。
             7 if has_dict && input.len() < max_len => {
                 let dict_idx = rng.gen_range_usize(0, dictionary.len());
                 let entry = &dictionary[dict_idx];
@@ -581,7 +581,7 @@ mod tests {
                 panic!("same message every time");
             }
         });
-        // 何度トリガーされても、ユニークなクラッシュは 1 つだけです。
+        // 何度トリガーされても、ユニークな crash は 1 つだけです。
         assert_eq!(report.failures.len(), 1);
     }
 
@@ -592,7 +592,7 @@ mod tests {
         let corpus_dir = temp.join("corpus");
         let crash_dir = temp.join("crashes");
 
-        // 1 回目の実行: クラッシュを発見し、それを永続化させます。
+        // 1 回目の実行: crash を発見し、それを永続化させます。
         let cfg1 = FuzzConfig {
             iterations: 5_000,
             max_input_len: 16,
@@ -611,11 +611,11 @@ mod tests {
         });
         assert!(r1.failure().is_some());
 
-        // クラッシュファイルが存在しているはずです。
+        // crash ファイルが存在しているはずです。
         let crashes: Vec<_> = std::fs::read_dir(&crash_dir).unwrap().collect();
         assert!(!crashes.is_empty(), "no crash files written");
 
-        // 2 回目の実行: 明示的な initial_corpus なしでディスクからコーパスを読み込みます。
+        // 2 回目の実行: 明示的な initial_corpus なしでディスクから corpus を読み込みます。
         let cfg2 = FuzzConfig {
             iterations: 1_000,
             max_input_len: 16,

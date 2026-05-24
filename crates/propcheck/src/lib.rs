@@ -1,6 +1,6 @@
 //! プロパティベーステストのランナーです。
 //!
-//! `#[test]` 関数の内部から [`run`] を使う（あるいは同じ効果をボイラープレート
+//! `#[test]` 関数の内部から [`run`] を使う（あるいは同じ効果を boilerplate
 //! を減らして得るために自由関数に `#[propcheck]` を書く）ことで、ランダムに
 //! 生成された多数の入力に対してプロパティを表明できます。
 //!
@@ -16,7 +16,7 @@
 //! プロパティ本体の中では以下が使えます。
 //!
 //! - [`prop_assert!`]、[`prop_assert_eq!`]、[`prop_assert_ne!`] は
-//!   詳細な失敗メッセージ付きのアサーションを提供します。
+//!   詳細な失敗メッセージ付きの assertion を提供します。
 //! - [`prop_assume!`] は前提条件を満たさないケースを破棄します。
 //! - [`classify!`] はケースごとのラベルを記録します。ランナーはそれらを
 //!   集計し、合格／失敗のサマリーと一緒にパーセンテージ表として報告します。
@@ -25,8 +25,8 @@
 //! 具体的には `bool`、`()`、`Result<(), E>`、または [`PropResult`] その
 //! ものです。これによりプロパティ本体の中で `?` 演算子を使えます。
 //!
-//! 失敗時の出力には実行で使用したシードが含まれているため、`PROPCHECK_SEED`
-//! 環境変数を設定することで決定的に再現できます。失敗したシードは
+//! 失敗時の出力には実行で使用した seed が含まれているため、`PROPCHECK_SEED`
+//! 環境変数を設定することで決定的に再現できます。失敗した seed は
 //! `target/propcheck-regressions/<name>.txt` にも永続化され、以降の実行
 //! 時に再生されます。
 
@@ -53,7 +53,7 @@ pub use assert::{__current_context, __pop_context, __push_context};
 pub use assert::{PropAssertFailure, PropDiscard, PropSkip};
 pub use classify::Classifications;
 pub use propcheck_core::strategy;
-// `Arbitrary` をトレイト（propcheck-core から、型の名前空間）および
+// `Arbitrary` を trait（propcheck-core から、型の名前空間）および
 // derive マクロ（propcheck-derive から、マクロの名前空間）の両方として公開します。
 pub use propcheck_derive::{propcheck, Arbitrary};
 #[doc(hidden)]
@@ -80,7 +80,7 @@ pub enum PropResult {
 }
 
 /// プロパティ本体が `bool`、`()`、`Result<(), E>`、または [`PropResult`] の
-/// いずれかを明示的な変換なしに返せるようにするトレイトです。
+/// いずれかを明示的な変換なしに返せるようにする trait です。
 pub trait IntoPropResult {
     /// `self` を [`PropResult`] に変換します。
     fn into_prop_result(self) -> PropResult;
@@ -126,7 +126,7 @@ impl<E: std::fmt::Debug> IntoPropResult for Result<(), E> {
 pub struct Config {
     /// 実行する*合格*ケースの目標数です。
     pub cases: usize,
-    /// PRNG シードです。デフォルトは `PROPCHECK_SEED` 環境変数、または
+    /// PRNG seed です。デフォルトは `PROPCHECK_SEED` 環境変数、または
     /// 壁時計のエントロピーです。
     pub seed: u64,
     /// 失敗ケースに対して適用される shrink ステップの最大数です。
@@ -137,14 +137,14 @@ pub struct Config {
     /// デフォルトは `cases * 10` です。
     pub max_discards: usize,
     /// 実行が中止される前に許容される `prop_skip!` のスキップの合計上限です。
-    /// 不安定な環境がノイズの多いジェネレータのように見えないよう、破棄とは
+    /// 不安定な環境がノイズの多い generator のように見えないよう、破棄とは
     /// 別にカウントされます。デフォルトは `cases * 10` です。
     pub max_skips: usize,
     /// `true` の場合、実行中はグローバル panic フックを無音化し、失敗ケース
     /// が端末をスパムしないようにします。内部で参照カウントされているため、
     /// 並行するランナーは単一のフックインストールを共有します。
     pub silence_panic_hook: bool,
-    /// `true` の場合、[`run`] / [`run_with`] は失敗シードを
+    /// `true` の場合、[`run`] / [`run_with`] は失敗 seed を
     /// `target/propcheck-regressions/<name>.txt` に永続化し、以降の実行
     /// の最初に再生します。
     pub regression_replay: bool,
@@ -297,7 +297,7 @@ impl<A> Outcome<A> {
         }
     }
 
-    /// 実行に使用されたシードです。
+    /// 実行に使用された seed です。
     pub fn seed(&self) -> Option<u64> {
         match self {
             Outcome::Failed { seed, .. } | Outcome::Aborted { seed, .. } => Some(*seed),
@@ -389,7 +389,7 @@ where
     let outcome = run_loop(&cfg, &mut wrapped, &regression_seeds);
     drop(_guard);
 
-    // 今後の実行のために新しい失敗シードを永続化します。
+    // 今後の実行のために新しい失敗 seed を永続化します。
     if let Outcome::Failed {
         seed: failed_seed, ..
     } = &outcome
@@ -471,7 +471,7 @@ where
     A: Arbitrary,
     F: FnMut(&A) -> PropResult,
 {
-    // 1. まず回帰シードを再生します。
+    // 1. まず回帰 seed を再生します。
     for &rseed in regression_seeds {
         let mut rng = XorShift64::seed_from_u64(rseed);
         let size = (cfg.max_size / 2).max(1);

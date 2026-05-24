@@ -1,5 +1,5 @@
 //! 型の [`Arbitrary`] 実装の代わりに [`Strategy`] によって駆動される
-//! ランナーのバリアントです。
+//! ランナーの variant です。
 
 use std::fmt::Debug;
 
@@ -221,8 +221,8 @@ where
     }
 }
 
-/// 可変長のサブストラテジのリストから [`one_of`](propcheck_core::strategy::one_of)
-/// ストラテジを構築します。それぞれを自動的にボックス化するため、異なる具象型を
+/// 可変長のサブ strategy のリストから [`one_of`](propcheck_core::strategy::one_of)
+/// strategy を構築します。それぞれを自動的にボックス化するため、異なる具象型を
 /// 持つことができます。
 ///
 /// 2つの形式がサポートされています。
@@ -244,7 +244,7 @@ macro_rules! prop_oneof {
 }
 
 /// `inner` を `leaf` の上に固定回数積み重ねることで、再帰的データの
-/// ストラテジを構築します。木、AST、JSON 風の値に便利です。
+/// strategy を構築します。木、AST、JSON 風の値に便利です。
 ///
 /// ```ignore
 /// use propcheck::{prop_recursive, prop_oneof};
@@ -270,7 +270,7 @@ macro_rules! prop_oneof {
 /// ```
 ///
 /// `leaf` と `inner` の結果は同じ値の型を生成する必要があります。`inner`
-/// クロージャは、1つ深いレベルを表す `BoxedStrategy<T>` を受け取り、現在の
+/// closure は、1つ深いレベルを表す `BoxedStrategy<T>` を受け取り、現在の
 /// レベル用の `BoxedStrategy<T>` を返します。
 #[macro_export]
 macro_rules! prop_recursive {
@@ -304,7 +304,7 @@ macro_rules! prop_filter {
     };
 }
 
-/// 名前付きのサブストラテジと本体式から構築された複合 [`Strategy`] を
+/// 名前付きのサブ strategy と本体式から構築された複合 [`Strategy`] を
 /// 返す関数を定義します。
 ///
 /// ```ignore
@@ -320,12 +320,12 @@ macro_rules! prop_filter {
 /// ```
 ///
 /// 各バインディング `name in expr` は `expr` を [`Strategy`]（または `Strategy`
-/// を実装する任意の値。`0..10` のような範囲は `IntRange` ストラテジの
+/// を実装する任意の値。`0..10` のような範囲は `IntRange` strategy の
 /// ブランケット impl 経由で動作します）として使用します。本体はターゲットの値の
 /// 型を返さなければなりません。
 ///
-/// shrink は `prop_compose!` をまたいで保持されません。生成されたストラテジは
-/// 各フィールドの shrink を独立に各サブストラテジから再導出して shrink します。
+/// shrink は `prop_compose!` をまたいで保持されません。生成された strategy は
+/// 各フィールドの shrink を独立に各サブ strategy から再導出して shrink します。
 /// 複雑な領域でより細かい制御が必要な場合は、手動で `Strategy` 実装を
 /// 書いてください。
 #[macro_export]
@@ -349,8 +349,8 @@ macro_rules! prop_compose {
     };
 }
 
-/// 内部用: `new_value` がボックス化されたクロージャで、`shrink_value` が
-/// 何も返さないストラテジです（複合ストラテジは入力変数を保持しないと
+/// 内部用: `new_value` がボックス化された closure で、`shrink_value` が
+/// 何も返さない strategy です（複合 strategy は入力変数を保持しないと
 /// 自然な shrink 経路を持ちません）。[`prop_compose!`] で使用されます。
 #[doc(hidden)]
 pub struct __ComposedStrategy<T> {

@@ -9,7 +9,7 @@ M1〜M3 終了時点でワークスペースには以下が揃っていた:
 - 3 クレート (`-core`, `-derive`, `propcheck`)。
 - `#[derive(Arbitrary)]` (struct 対応)、`#[propcheck]` 属性マクロ。
 - `prop_assert*!` ファミリ、`prop_assume!`。
-- 基本的な strategy コンビネータ。
+- 基本的な strategy combinator。
 
 2 回目の gap 分析の問い: 実プロジェクトでプロパティテストを書く
 エージェントが、なお詰まる箇所はどこか?
@@ -31,16 +31,16 @@ M1〜M3 終了時点でワークスペースには以下が揃っていた:
 
 7. Fuzz dictionary (`FuzzConfig::dictionary`)。
 8. Crash 重複排除 + 最初の crash 後も継続。
-9. コーパス / crash のディスク永続化。
+9. corpus / crash のディスク永続化。
 
 ### Tier D — 棄却
 
-- CLI サブコマンド、JUnit XML、フル regex 文字列、スナップショット
+- CLI サブコマンド、JUnit XML、フル regex 文字列、snapshot
   テスト。
 
 ## 実装順
 
-1. 軽量な追加から: `Outcome` フィールド拡張、アクセサヘルパー、
+1. 軽量な追加から: `Outcome` フィールド拡張、accessor ヘルパー、
    panic-hook RAII。
 2. `IntoPropResult` (ランナー署名は変えるが、blanket
    `impl IntoPropResult for bool` で互換性を保ったまま追加可能)。

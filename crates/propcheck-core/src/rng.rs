@@ -1,12 +1,12 @@
 //! 小さな擬似乱数生成器です。
 //!
 //! [`XorShift64`] は Marsaglia/Vigna の xorshift64* アルゴリズムを実装します。
-//! 暗号学的に安全ではありませんが、高速で、与えられたシードに対して
+//! 暗号学的に安全ではありませんが、高速で、与えられた seed に対して
 //! 決定的に動作し、ランダム化テストには十分です。
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
-/// [`crate::Arbitrary`] ジェネレータが利用する最小限の PRNG トレイトです。
+/// [`crate::Arbitrary`] generator が利用する最小限の PRNG trait です。
 ///
 /// 実装者は [`Rng::next_u64`] のみを提供すればよく、その他のメソッドは
 /// (常に最適とは限らないものの) 正しいデフォルト実装を備えています。
@@ -63,9 +63,9 @@ pub trait Rng {
     /// `slice` の要素への一様乱数な参照を返します。スライスが空の場合は
     /// `None` を返します。
     ///
-    /// `Self: Sized` で制約しているのは、トレイトの残りの部分をオブジェクト安全に
+    /// `Self: Sized` で制約しているのは、trait の残りの部分をオブジェクト安全に
     /// 保つためです。`&mut dyn Rng` を経由した内部ディスパッチには、
-    /// ディスパッチ対象トレイトにジェネリックメソッドが存在しないことが必要です。
+    /// ディスパッチ対象 trait にジェネリックメソッドが存在しないことが必要です。
     fn choose<'a, T>(&mut self, slice: &'a [T]) -> Option<&'a T>
     where
         Self: Sized,
@@ -78,14 +78,14 @@ pub trait Rng {
     }
 }
 
-/// xorshift64* PRNG です。与えられたシードに対して決定的に動作します。
+/// xorshift64* PRNG です。与えられた seed に対して決定的に動作します。
 #[derive(Debug, Clone)]
 pub struct XorShift64 {
     state: u64,
 }
 
 impl XorShift64 {
-    /// 任意の `u64` シードから [`XorShift64`] を構築します。シードが `0`
+    /// 任意の `u64` seed から [`XorShift64`] を構築します。seed が `0`
     /// の場合、アルゴリズムが常に `0` を生成するように退化してしまうため、
     /// 暗黙のうちに固定の非ゼロ定数で置き換えられます。
     pub fn seed_from_u64(seed: u64) -> Self {
@@ -97,7 +97,7 @@ impl XorShift64 {
         Self { state }
     }
 
-    /// 現在の実時間とプロセス ID からシードを構築します。これはベストエフォートで、
+    /// 現在の実時間とプロセス ID から seed を構築します。これはベストエフォートで、
     /// 意図的に暗号学的安全性を持たせていません。
     pub fn from_entropy() -> Self {
         let nanos = SystemTime::now()
@@ -108,7 +108,7 @@ impl XorShift64 {
         Self::seed_from_u64(nanos ^ pid.rotate_left(17))
     }
 
-    /// 現在の内部状態を返します。失敗したテストのシードをログに記録し、
+    /// 現在の内部状態を返します。失敗したテストの seed をログに記録し、
     /// 実行を再現できるようにするのに便利です。
     pub fn state(&self) -> u64 {
         self.state

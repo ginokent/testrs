@@ -1,7 +1,7 @@
-//! ジェネレータコンビネータ (いわゆる「strategy」) です。
+//! generator combinator (いわゆる「strategy」) です。
 //!
-//! [`Arbitrary`] は型ごとに 1 つの正規ジェネレータがあれば十分な場合に便利ですが、
-//! 実際のテストではアドホックなジェネレータ (「0 から 100 までの `i32`」、
+//! [`Arbitrary`] は型ごとに 1 つの正規 generator があれば十分な場合に便利ですが、
+//! 実際のテストではアドホックな generator (「0 から 100 までの `i32`」、
 //! 「空でない `Vec`」、「これら 3 つのうちのいずれか」など) がよく必要になります。
 //! このモジュールは、そのような目的のために合成可能な [`Strategy`] 値を提供します。
 //!
@@ -30,7 +30,7 @@ pub mod str {
     pub use crate::strategy_str::*;
 }
 
-/// [`Strategy::Value`] 型の値を生成し shrink する方法を知る、合成可能なジェネレータです。
+/// [`Strategy::Value`] 型の値を生成し shrink する方法を知る、合成可能な generator です。
 pub trait Strategy {
     /// この strategy が生成する値の型です。
     type Value: Clone + Debug + 'static;
@@ -43,7 +43,7 @@ pub trait Strategy {
     fn shrink_value(&self, value: &Self::Value) -> Vec<Self::Value>;
 }
 
-/// 任意の [`Strategy`] の上に重ねるコンビネータヘルパーです。
+/// 任意の [`Strategy`] の上に重ねる combinator ヘルパーです。
 pub trait StrategyExt: Strategy + Sized {
     /// 生成された値を `f` で変換します。`f` は一般に可逆ではないため、
     /// shrink は失われます。
@@ -522,7 +522,7 @@ pub fn tuple<A: Strategy, B: Strategy>(a: A, b: B) -> Tuple2<A, B> {
     Tuple2(a, b)
 }
 
-// --- Map コンビネータ ----------------------------------------------------
+// --- Map combinator ----------------------------------------------------
 
 /// [`StrategyExt::map`] を参照してください。
 pub struct Map<S, F, U> {
@@ -547,7 +547,7 @@ where
     }
 }
 
-// --- FlatMap コンビネータ -----------------------------------------------
+// --- FlatMap combinator -----------------------------------------------
 
 /// [`StrategyExt::flat_map`] を参照してください。
 ///
@@ -578,7 +578,7 @@ where
     }
 }
 
-// --- Filter コンビネータ -------------------------------------------------
+// --- Filter combinator -------------------------------------------------
 
 /// [`StrategyExt::filter`] を参照してください。
 pub struct Filter<S, F> {
@@ -666,7 +666,7 @@ impl<T: Clone + Debug + 'static> Strategy for BoxedStrategy<T> {
     }
 }
 
-/// [`BoxedStrategy`] が使用する [`Strategy`] のオブジェクト安全な兄弟トレイトです。
+/// [`BoxedStrategy`] が使用する [`Strategy`] のオブジェクト安全な兄弟 trait です。
 /// メソッド名は意図的に `Strategy` のものと異なるようにしてあります。
 /// これは、下のブランケット実装がユーザーコード内の通常の [`Strategy`] 呼び出しを
 /// 隠蔽しないようにするためです。

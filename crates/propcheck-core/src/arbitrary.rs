@@ -1,20 +1,20 @@
-//! [`Arbitrary`] トレイトと一般的な型に対するその実装です。
+//! [`Arbitrary`] trait と一般的な型に対するその実装です。
 //!
 //! 独自の型に対して [`Arbitrary`] を実装すれば、`propcheck` のプロパティベース
-//! テストランナーで使えるようになります。このトレイトは2つの責務を兼ねています。
+//! テストランナーで使えるようになります。この trait は2つの責務を兼ねています。
 //!
 //! - **生成:** [`Rng`] と `size` ヒントを受け取ってランダム値を生成します。
 //!   呼び出し側は通常、実行中に `size` を徐々に大きくしていきます。
 //! - **Shrinking:** 反例が与えられたとき、同じくプロパティを失敗させうる
-//!   より小さい候補を提案します。ランナーはshrinkツリーを繰り返したどって
+//!   より小さい候補を提案します。ランナーは shrink ツリーを繰り返したどって
 //!   最小の反例を探索します。
 
 use crate::rng::Rng;
 use std::fmt::Debug;
 
-/// 値をランダム生成しshrinkできる型のためのトレイトです。
+/// 値をランダム生成し shrink できる型のための trait です。
 ///
-/// デフォルトの `shrink` は空のイテレータを返します（つまり「より小さい値は
+/// デフォルトの `shrink` は空の iterator を返します（つまり「より小さい値は
 /// 知られていない」という意味）。これは正しい実装ですが、独自の型にとっては
 /// 役に立たない実装です。
 pub trait Arbitrary: Sized + Clone + Debug {
@@ -23,7 +23,7 @@ pub trait Arbitrary: Sized + Clone + Debug {
     /// `size` を線形に増やしていきます。
     fn arbitrary<R: Rng + ?Sized>(rng: &mut R, size: usize) -> Self;
 
-    /// 厳密により小さい候補を返すイテレータです。shrinkが速く収束するように、
+    /// 厳密により小さい候補を返す iterator です。shrink が速く収束するように、
     /// 小さいものを先に並べる順序が好まれます。
     fn shrink(&self) -> Box<dyn Iterator<Item = Self> + '_> {
         Box::new(std::iter::empty())
@@ -200,7 +200,7 @@ macro_rules! impl_arbitrary_float {
                     return Box::new(std::iter::empty());
                 }
                 let mut out: Vec<$t> = Vec::new();
-                // 常に最も強いshrinkから先に試します。
+                // 常に最も強い shrink から先に試します。
                 out.push(0.0);
                 if *self < 0.0 && self.is_finite() {
                     out.push(-*self);
@@ -220,7 +220,7 @@ macro_rules! impl_arbitrary_float {
                     if halved != *self && halved != 0.0 {
                         out.push(halved);
                     }
-                    // 細粒度のshrinkのためにULP単位でゼロに向かって1ステップ進めます。
+                    // 細粒度の shrink のために ULP 単位でゼロに向かって1ステップ進めます。
                     let bits = self.to_bits();
                     if bits != 0 {
                         let stepped = <$t>::from_bits(bits - 1);
@@ -242,7 +242,7 @@ impl_arbitrary_float!(f64, u64, 64);
 
 impl Arbitrary for char {
     fn arbitrary<R: Rng + ?Sized>(rng: &mut R, _size: usize) -> Self {
-        // 80%は印字可能なASCII、20%はより広範なUnicode（サロゲートは除く）です。
+        // 80%は印字可能な ASCII、20%はより広範な Unicode（サロゲートは除く）です。
         if rng.gen_range_u64(0, 5) > 0 {
             let code = rng.gen_range_u64(0x20, 0x7f) as u32;
             char::from_u32(code).unwrap_or('a')
@@ -298,7 +298,7 @@ impl<T: Arbitrary> Arbitrary for Vec<T> {
         if len == 0 {
             return Box::new(candidates.into_iter());
         }
-        // 空の vec が最も強いshrinkです。
+        // 空の vec が最も強い shrink です。
         candidates.push(Vec::new());
         // 長さを半分にしたプレフィックス。
         let mut chunk = len;
@@ -317,7 +317,7 @@ impl<T: Arbitrary> Arbitrary for Vec<T> {
                 candidates.push(v);
             }
         }
-        // 各要素をその場でshrinkします。
+        // 各要素をその場で shrink します。
         for i in 0..len {
             let shrinks: Vec<T> = self[i].shrink().collect();
             for s in shrinks {

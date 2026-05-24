@@ -1,4 +1,4 @@
-//! Tier-A以降に追加された機能を含む、propcheckの完全なワークフローを実演します。
+//! Tier-A 以降に追加された機能を含む、propcheck の完全なワークフローを実演します。
 //! 具体的には、`#[arbitrary(strategy = ...)]`フィールド属性、`flat_map`による
 //! 依存生成、`prop_recursive!`による再帰データ、`prop_assert_close!`、
 //! そしてその他のツール群が連携して動作することを示します。
@@ -13,7 +13,7 @@ use propcheck::{
 
 #[derive(Arbitrary, Debug, Clone, PartialEq)]
 struct User {
-    // フィールド属性によりジェネレータの値域を制約するため、
+    // フィールド属性により generator の値域を制約するため、
     // テストが無意味な入力に試行を浪費することはありません。
     #[arbitrary(strategy = "str::ascii_alphanumeric(1..16)")]
     name: String,
@@ -32,7 +32,7 @@ enum Json {
 }
 
 fn main() {
-    // 1. フィールド属性がジェネレータを値域内に保つため、discard は不要で、
+    // 1. フィールド属性が generator を値域内に保つため、discard は不要で、
     //    classifications は実際の分布を反映します。
     run(
         "User invariants hold under derived generator",
@@ -45,7 +45,7 @@ fn main() {
         },
     );
 
-    // 2. prop_assert_matches!はResult/Option/enumのアサーションを読みやすくします。
+    // 2. prop_assert_matches!は Result/Option/enum の assertion を読みやすくします。
     run("name parses as identifier-like", |u: &User| {
         let first = u.name.chars().next();
         prop_assert_matches!(first, Some(c) if c.is_ascii_alphanumeric());
@@ -79,7 +79,7 @@ fn main() {
         },
     );
 
-    // 4. flat_mapによる依存生成: まず長さを選び、その長さちょうどのVecを生成します。
+    // 4. flat_map による依存生成: まず長さを選び、その長さちょうどの Vec を生成します。
     let dependent = int_range(1usize..6).flat_map(|len| vec_of(any::<i32>(), len..len + 1));
     run_strategy_with(
         "length-dependent Vec has expected size",
@@ -99,9 +99,9 @@ fn main() {
         true
     });
 
-    // 6. 失敗時の出力と、フィールド属性のstrategyを介したフィールド単位の
-    //    shrinkを実演するため、意図的に偽となるプロパティです。
-    //    `age`は0ではなく18（int_rangeの下限）に向かってshrinkされます。
+    // 6. 失敗時の出力と、フィールド属性の strategy を介したフィールド単位の
+    //    shrink を実演するため、意図的に偽となるプロパティです。
+    //    `age`は0ではなく18（int_range の下限）に向かって shrink されます。
     run("user.age is never above 50", |u: &User| {
         prop_assert!(u.age <= 50, "expected age <= 50, got {}", u.age);
         true
