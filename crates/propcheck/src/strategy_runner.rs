@@ -22,11 +22,7 @@ where
 }
 
 /// カスタム設定で `strategy` が生成した値に対して `prop` を実行します。
-pub fn forall_strategy_with<S, F, R>(
-    strategy: S,
-    cfg: Config,
-    mut prop: F,
-) -> Outcome<S::Value>
+pub fn forall_strategy_with<S, F, R>(strategy: S, cfg: Config, mut prop: F) -> Outcome<S::Value>
 where
     S: Strategy,
     S::Value: Debug,
@@ -139,7 +135,10 @@ where
     while passed < target_cases {
         if discarded > cfg.max_discards {
             return Outcome::Aborted {
-                reason: format!("too many discards: {discarded} (limit {})", cfg.max_discards),
+                reason: format!(
+                    "too many discards: {discarded} (limit {})",
+                    cfg.max_discards
+                ),
                 cases: passed,
                 discarded,
                 skipped,

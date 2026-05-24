@@ -45,8 +45,11 @@ fn regression_seed_is_persisted_and_replayed() {
     });
     assert!(captured.is_err(), "expected runner to panic on failure");
 
-    // 失敗後、regressionファイルが存在し、少なくとも1行のseedを含むはずです。
-    assert!(reg_file.exists(), "regression file was not created at {reg_file:?}");
+    // 失敗後、regression ファイルが存在し、少なくとも 1 行の seed を含むはずです。
+    assert!(
+        reg_file.exists(),
+        "regression file was not created at {reg_file:?}"
+    );
     let content = fs::read_to_string(&reg_file).expect("read regression file");
     let seeds: Vec<u64> = content
         .lines()
@@ -61,7 +64,10 @@ fn regression_seed_is_persisted_and_replayed() {
     let captured2 = std::panic::catch_unwind(move || {
         propcheck::run::<u32, _, _>(&test_name_for_replay, |&n: &u32| n < 50);
     });
-    assert!(captured2.is_err(), "regression should reproduce the failure");
+    assert!(
+        captured2.is_err(),
+        "regression should reproduce the failure"
+    );
 
     // 後片付け。
     let _ = fs::remove_file(&reg_file);
@@ -96,7 +102,10 @@ fn run_with_regression_replay_disabled_does_not_persist() {
         );
     });
 
-    assert!(!reg_file.exists(), "file should not be created when regression_replay = false");
+    assert!(
+        !reg_file.exists(),
+        "file should not be created when regression_replay = false"
+    );
 
     // このファイルがサブプロセス生成なしでビルドされる場合に、Commandの
     // unused-import警告を抑制します。

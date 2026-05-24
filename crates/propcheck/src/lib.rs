@@ -56,9 +56,9 @@ pub use propcheck_core::strategy;
 // `Arbitrary` をトレイト（propcheck-core から、型の名前空間）および
 // derive マクロ（propcheck-derive から、マクロの名前空間）の両方として公開します。
 pub use propcheck_derive::{propcheck, Arbitrary};
-pub use strategy_runner::{forall_strategy, forall_strategy_with, run_strategy, run_strategy_with};
 #[doc(hidden)]
 pub use strategy_runner::__ComposedStrategy;
+pub use strategy_runner::{forall_strategy, forall_strategy_with, run_strategy, run_strategy_with};
 
 use panic_hook::SilentPanicHook;
 
@@ -390,7 +390,10 @@ where
     drop(_guard);
 
     // 今後の実行のために新しい失敗シードを永続化します。
-    if let Outcome::Failed { seed: failed_seed, .. } = &outcome {
+    if let Outcome::Failed {
+        seed: failed_seed, ..
+    } = &outcome
+    {
         if let Some(path) = &regression_path {
             let _ = regression::append_seed(path, *failed_seed);
         }
@@ -548,7 +551,7 @@ where
             CaseOutcome::Fail(message) => {
                 classifications.merge_case(labels);
                 let shrunk =
-                shrink_failure_with_mode(val.clone(), prop, cfg.max_shrinks, cfg.shrink_mode);
+                    shrink_failure_with_mode(val.clone(), prop, cfg.max_shrinks, cfg.shrink_mode);
                 return Outcome::Failed {
                     original: val,
                     shrunk,
@@ -797,7 +800,9 @@ mod tests {
             n > 0
         });
         match outcome {
-            Outcome::Passed { cases, discarded, .. } => {
+            Outcome::Passed {
+                cases, discarded, ..
+            } => {
                 assert_eq!(cases, 50);
                 assert!(discarded > 0, "expected some discards from negative inputs");
             }

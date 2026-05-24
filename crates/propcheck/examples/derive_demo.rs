@@ -32,15 +32,18 @@ enum Json {
 }
 
 fn main() {
-    // 1. フィールド属性がジェネレータを値域内に保つため、discardは不要で、
-    //    classificationsは実際の分布を反映します。
-    run("User invariants hold under derived generator", |u: &User| {
-        classify!(u.favorite_numbers.is_empty(), "no-favorites");
-        classify!(u.favorite_numbers.len() >= 3, "many-favorites");
-        prop_assert!(!u.name.is_empty());
-        prop_assert!((18..100).contains(&u.age));
-        true
-    });
+    // 1. フィールド属性がジェネレータを値域内に保つため、discard は不要で、
+    //    classifications は実際の分布を反映します。
+    run(
+        "User invariants hold under derived generator",
+        |u: &User| {
+            classify!(u.favorite_numbers.is_empty(), "no-favorites");
+            classify!(u.favorite_numbers.len() >= 3, "many-favorites");
+            prop_assert!(!u.name.is_empty());
+            prop_assert!((18..100).contains(&u.age));
+            true
+        },
+    );
 
     // 2. prop_assert_matches!はResult/Option/enumのアサーションを読みやすくします。
     run("name parses as identifier-like", |u: &User| {

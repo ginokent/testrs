@@ -398,7 +398,10 @@ pub struct WeightedOneOf<S> {
 
 /// [`WeightedOneOf`] strategy を構築します。各ペアは `(weight, strategy)` です。
 pub fn weighted_one_of<S: Strategy>(choices: Vec<(u32, S)>) -> WeightedOneOf<S> {
-    assert!(!choices.is_empty(), "weighted_one_of: choices must be non-empty");
+    assert!(
+        !choices.is_empty(),
+        "weighted_one_of: choices must be non-empty"
+    );
     let total = choices.iter().map(|(w, _)| *w as u64).sum::<u64>();
     assert!(total > 0, "weighted_one_of: total weight must be > 0");
     WeightedOneOf {
@@ -461,7 +464,9 @@ impl<S: Strategy> Strategy for VecOf<S> {
         } else {
             self.min_len
         };
-        (0..len).map(|_| self.element.new_value(rng, size)).collect()
+        (0..len)
+            .map(|_| self.element.new_value(rng, size))
+            .collect()
     }
     fn shrink_value(&self, value: &Vec<S::Value>) -> Vec<Vec<S::Value>> {
         let mut out = Vec::new();
@@ -774,9 +779,7 @@ mod tests {
     fn weighted_skews_distribution() {
         let s = weighted_one_of(vec![(99, just(0i32)), (1, just(1))]);
         let mut rng = r();
-        let zeros = (0..1000)
-            .filter(|_| s.new_value(&mut rng, 0) == 0)
-            .count();
+        let zeros = (0..1000).filter(|_| s.new_value(&mut rng, 0) == 0).count();
         assert!(zeros > 900, "expected ~99% zeros, got {zeros}");
     }
 

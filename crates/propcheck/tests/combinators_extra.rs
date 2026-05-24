@@ -164,10 +164,13 @@ fn prop_recursive_builds_tree_strategy() {
         let v = s.new_value(&mut rng, 8);
         max_depth_seen = max_depth_seen.max(depth_of(&v));
     }
-    // depth = 3を指定したので、実行時のツリーはその上限を守る必要があります。
-    // （葉が1を寄与し、その上に3層のinnerがそれらを包みます。）
-    assert!(max_depth_seen <= 4, "expected depth <= 4, saw {max_depth_seen}");
-    // 再帰が発火することを確認するため、Arrayが少なくとも1つは現れるはずです。
+    // depth = 3 を指定したので、実行時のツリーはその上限を守る必要があります。
+    // (葉が 1 を寄与し、その上に 3 層の inner がそれらを包みます。)
+    assert!(
+        max_depth_seen <= 4,
+        "expected depth <= 4, saw {max_depth_seen}"
+    );
+    // 再帰が発火することを確認するため、Array が少なくとも 1 つは現れるはずです。
     let mut rng = propcheck::XorShift64::seed_from_u64(31);
     let any_array = (0..200).any(|_| matches!(s.new_value(&mut rng, 8), Json::Array(_)));
     assert!(any_array, "expected at least one Array variant");

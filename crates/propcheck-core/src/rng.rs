@@ -89,7 +89,11 @@ impl XorShift64 {
     /// の場合、アルゴリズムが常に `0` を生成するように退化してしまうため、
     /// 暗黙のうちに固定の非ゼロ定数で置き換えられます。
     pub fn seed_from_u64(seed: u64) -> Self {
-        let state = if seed == 0 { 0x9E37_79B9_7F4A_7C15 } else { seed };
+        let state = if seed == 0 {
+            0x9E37_79B9_7F4A_7C15
+        } else {
+            seed
+        };
         Self { state }
     }
 

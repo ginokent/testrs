@@ -198,7 +198,12 @@ fn parse_input(input: TokenStream) -> Result<ParsedItem, String> {
     }
     let name = match iter.next() {
         Some(TokenTree::Ident(id)) => id.to_string(),
-        Some(other) => return Err(format!("expected identifier, found `{}`", tt_display(&other))),
+        Some(other) => {
+            return Err(format!(
+                "expected identifier, found `{}`",
+                tt_display(&other)
+            ))
+        }
         None => return Err("expected type name".to_string()),
     };
     let (generics_decl, generics_use, type_params) = parse_generics(&mut iter)?;
@@ -243,9 +248,7 @@ fn parse_input(input: TokenStream) -> Result<ParsedItem, String> {
         };
         let variants = parse_enum_variants(body)?;
         if variants.is_empty() {
-            return Err(
-                "#[derive(Arbitrary)] needs at least one variant on an enum".to_string()
-            );
+            return Err("#[derive(Arbitrary)] needs at least one variant on an enum".to_string());
         }
         Ok(ParsedItem::Enum(ParsedEnum {
             name,
@@ -271,8 +274,7 @@ fn parse_optional_where(
     while let Some(t) = iter.peek() {
         match t {
             TokenTree::Group(g)
-                if g.delimiter() == Delimiter::Brace
-                    || g.delimiter() == Delimiter::Parenthesis =>
+                if g.delimiter() == Delimiter::Brace || g.delimiter() == Delimiter::Parenthesis =>
             {
                 break;
             }
@@ -333,7 +335,7 @@ fn skip_attrs_and_visibility(iter: &mut std::iter::Peekable<proc_macro::token_st
         match iter.peek() {
             Some(TokenTree::Punct(p)) if p.as_char() == '#' => {
                 iter.next(); // '#'
-                // 続くのは角括弧グループ `[...]` のはずです。
+                             // 続くのは角括弧グループ `[...]` のはずです。
                 if let Some(TokenTree::Group(_)) = iter.peek() {
                     iter.next();
                 }
@@ -607,10 +609,7 @@ fn generate_arbitrary_impl(s: &ParsedStruct) -> TokenStream {
                     .enumerate()
                     .filter(|(j, _)| *j != idx)
                     .map(|(_, fo)| {
-                        format!(
-                            "{}: ::std::clone::Clone::clone(&self.{})",
-                            fo.name, fo.name
-                        )
+                        format!("{}: ::std::clone::Clone::clone(&self.{})", fo.name, fo.name)
                     })
                     .collect();
                 let other_part = if other_clones.is_empty() {
@@ -740,8 +739,7 @@ fn generate_arbitrary_impl_enum(e: &ParsedEnum) -> TokenStream {
         let body = match &v.fields {
             Fields::Unit => format!("{name}::{vname}"),
             Fields::Unnamed(fs) => {
-                let args: Vec<String> =
-                    fs.iter().map(|fi| gen_field_value(&fi.strategy)).collect();
+                let args: Vec<String> = fs.iter().map(|fi| gen_field_value(&fi.strategy)).collect();
                 format!("{name}::{vname}({})", args.join(", "))
             }
             Fields::Named(fs) => {
@@ -783,8 +781,7 @@ fn generate_arbitrary_impl_enum(e: &ParsedEnum) -> TokenStream {
                         if j == shrink_idx {
                             ctor_args.push_str("__s");
                         } else {
-                            ctor_args
-                                .push_str(&format!("::std::clone::Clone::clone(__f{j})"));
+                            ctor_args.push_str(&format!("::std::clone::Clone::clone(__f{j})"));
                         }
                     }
                     let field_access = format!("__f{shrink_idx}");
@@ -838,7 +835,9 @@ fn generate_arbitrary_impl_enum(e: &ParsedEnum) -> TokenStream {
                 (pat, body)
             }
         };
-        arms_shrink.push_str(&format!("        {pat} => {{\n            {body}        }}\n"));
+        arms_shrink.push_str(&format!(
+            "        {pat} => {{\n            {body}        }}\n"
+        ));
     }
 
     // 最もシンプルなバリアントへ collapse します（そのバリアントが unit
@@ -930,7 +929,12 @@ fn parse_attr_args(attr: TokenStream) -> Result<AttrArgs, String> {
     while iter.peek().is_some() {
         let key = match iter.next() {
             Some(TokenTree::Ident(id)) => id.to_string(),
-            Some(t) => return Err(format!("expected key identifier, found `{}`", tt_display(&t))),
+            Some(t) => {
+                return Err(format!(
+                    "expected key identifier, found `{}`",
+                    tt_display(&t)
+                ))
+            }
             None => break,
         };
         match iter.next() {
@@ -944,7 +948,12 @@ fn parse_attr_args(attr: TokenStream) -> Result<AttrArgs, String> {
         }
         let value_str = match iter.next() {
             Some(TokenTree::Literal(lit)) => lit.to_string(),
-            Some(t) => return Err(format!("expected integer literal for `{key}`, found `{}`", tt_display(&t))),
+            Some(t) => {
+                return Err(format!(
+                    "expected integer literal for `{key}`, found `{}`",
+                    tt_display(&t)
+                ))
+            }
             None => return Err(format!("expected value for `{key}`")),
         };
         let value: u64 = value_str
