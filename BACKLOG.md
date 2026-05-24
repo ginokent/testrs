@@ -2,9 +2,10 @@
 
 `propcheck` ワークスペースの状況 snapshot。更新日: 2026-05-24。
 
-- リポジトリ状態: すべての変更を `claude/property-based-testing-lib-V4Q5s`
-  ブランチにコミット・プッシュ済み。
-- テストスイート: **ユニット + 統合テスト 153 件 pass**。doc テストも含む。
+- リポジトリ状態: M1〜M6 の機能は `main` にマージ済み。本ファイルの
+  整備は `claude/sub-agent-backlog-update-Sq350` ブランチで行っている。
+- テストスイート: **ユニット + 統合テスト 146 件 + doc テスト 7 件 =
+  合計 153 件 pass** (doc テスト 10 件は意図的に `ignore` 指定)。
 - Lint: `cargo clippy --workspace --all-targets -- -D warnings` clean。
 - 依存方針: std とコンパイラ組み込みの `proc_macro` クレートのみ。
 - ワークスペース全体で `unsafe_code = "forbid"` (最小 `block_on` executor
