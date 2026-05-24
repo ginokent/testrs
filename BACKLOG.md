@@ -116,6 +116,9 @@
 - ✅ `Strategy::flat_map` / `FlatMap`、依存生成のための。
 - ✅ `prop_recursive! { leaf = …, inner = …, max_depth = N }` マクロ。
   tree / AST / JSON-like 値の生成に使用。
+- ✅ `prop_oneof![ … ]` マクロ。一様 (`prop_oneof![a, b, c]`) と
+  重み付き (`prop_oneof![1 => a, 4 => b]`) の両形式で、異なる具象型を
+  持つサブ strategy を自動 box 化してまとめる。
 - ✅ `char_range(lo..hi)` Strategy。
 - ✅ `bytes(len_range)` Strategy (`vec_of(any::<u8>(), …)` のシンタックスシュガー)。
 - ✅ `f32_range` / `f64_range`、0.0 / lo への shrink 付き。
