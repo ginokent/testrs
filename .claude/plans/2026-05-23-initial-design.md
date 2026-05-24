@@ -1,84 +1,86 @@
-# Initial design — propcheck workspace
+# 初期設計 — propcheck ワークスペース
 
-**Status: shipped in commit `793f067` (M1) and incrementally extended
-in `27c663d` (M2) and `ef9f8b1` (M3).**
+**Status: コミット `793f067` (M1) で着地。`27c663d` (M2) と
+`ef9f8b1` (M3) で段階的に拡張。**
 
-## Goal
+## ゴール
 
-A dev-dependency property-based testing + fuzzing library for Rust,
-with zero external dependencies, that can be used as a drop-in
-alternative to `proptest` + `cargo-fuzz` for the 80% case.
+Rust 向けの dev-dependency プロパティベーステスト + ファジング
+ライブラリ。外部依存ゼロで、80% のケースについて `proptest` +
+`cargo-fuzz` の代替として使える。
 
-## Constraints
+## 制約
 
-- **No external crates.** Only the standard library and the
-  rustc-provided `proc_macro` crate. `unsafe_code = forbid` at the
-  workspace level.
-- **Workspace, multi-crate.** A monolithic crate is harder to evolve.
+- **外部クレートなし。** std とコンパイラ提供の `proc_macro`
+  クレートのみ。ワークスペース全体で `unsafe_code = forbid`。
+- **ワークスペース、マルチクレート構成。** モノリシッククレートは
+  進化させづらい。
 
-## Crate layout
+## クレート構成
 
 ```
 crates/
-├── propcheck-core/   # Rng + Arbitrary trait + Strategy combinators
+├── propcheck-core/   # Rng + Arbitrary trait + Strategy コンビネータ
 ├── propcheck-derive/ # proc-macro: #[derive(Arbitrary)] + #[propcheck]
-├── propcheck/        # runner, assertion macros, regression replay
-└── propcheck-fuzz/   # in-process mutation byte fuzzer + typed fuzz
+├── propcheck/        # ランナー、アサーションマクロ、regression replay
+└── propcheck-fuzz/   # in-process ミューテーション・バイトファザー + 型付きファズ
 ```
 
-The umbrella crate `propcheck` re-exports everything from `-core` and
-`-derive`. Users typically only depend on `propcheck` (plus
-`propcheck-fuzz` if they want fuzzing).
+アンブレラクレート `propcheck` が `-core` と `-derive` の内容を
+すべて再エクスポート。ユーザは通常 `propcheck` のみに依存
+(ファジングを使う場合は `propcheck-fuzz` も)。
 
-## Core abstractions
+## 中核抽象
 
-- `Rng`: minimal PRNG trait with `next_u64` (only) as the required
-  method. Default impls for `gen_range_u64`, `gen_range_i64`,
-  `gen_range_usize`, `gen_bool`, `fill_bytes`, `choose`.
-- `XorShift64`: the default PRNG. Marsaglia/Vigna xorshift64* — fast,
-  deterministic per seed, period 2^64−1.
-- `Arbitrary`: `arbitrary(&mut R, size: usize) -> Self` plus a
-  `shrink(&self) -> Box<dyn Iterator<Item=Self> + '_>` default.
+- `Rng`: 最小 PRNG trait。必須メソッドは `next_u64` のみ。
+  `gen_range_u64`, `gen_range_i64`, `gen_range_usize`, `gen_bool`,
+  `fill_bytes`, `choose` のデフォルト実装付き。
+- `XorShift64`: デフォルト PRNG。Marsaglia/Vigna の xorshift64* —
+  高速、seed あたり決定論的、周期 2^64−1。
+- `Arbitrary`: `arbitrary(&mut R, size: usize) -> Self` と、
+  デフォルト実装付きの
+  `shrink(&self) -> Box<dyn Iterator<Item=Self> + '_>`。
 
-## Shrinking strategy
+## シュリンク戦略
 
-- Per-type shrinks: ints toward zero (halve-then-walk-back),
-  collections by length then per-element, strings via char vec.
-- The runner shrink loop accepts the first candidate that still fails
-  (Greedy). An Exhaustive mode added later in M5.
+- 型ごとのシュリンク: 整数は 0 方向 (halve-then-walk-back)、
+  コレクションは長さ → 要素ごと、文字列は char vec 経由。
+- ランナーのシュリンクループは「まだ失敗する最初の候補を採用」
+  (Greedy)。M5 で Exhaustive モードを追加。
 
-## Initial Arbitrary impls
+## 初期 Arbitrary 実装
 
-`bool`, all integer widths, `f32`, `f64`, `char`, `String`, `Vec<T>`,
-`Option<T>`, `Result<T, E>`, tuples 0/1/2/3/4.
+`bool`、全整数幅、`f32`、`f64`、`char`、`String`、`Vec<T>`、
+`Option<T>`、`Result<T, E>`、タプル 0/1/2/3/4。
 
-## Runner
+## ランナー
 
-- `forall` / `run` for `Arbitrary`-driven properties.
-- Default 100 cases, configurable via `Config`.
-- `PROPCHECK_SEED` env var for reproduction.
-- Panic capture via `std::panic::catch_unwind`.
+- `Arbitrary` 駆動プロパティ向けの `forall` / `run`。
+- デフォルト 100 ケース、`Config` で設定可能。
+- 再現用環境変数 `PROPCHECK_SEED`。
+- `std::panic::catch_unwind` による panic 捕捉。
 
-## Fuzzer
+## ファザー
 
-- `fuzz(cfg, |&[u8]| ...)` — runs mutated byte buffers through the
-  target. Panic is the crash signal. Initial corpus optional.
-- Mutations: bit-flip, byte-replace, interesting-byte, insert, delete,
-  splice (from corpus), swap.
-- Minimization: greedy single-byte deletion + zero-replacement passes.
-- `PROPCHECK_FUZZ_SEED` for reproduction.
+- `fuzz(cfg, |&[u8]| ...)` — ミューテートされたバイト列を
+  ターゲットに流す。Crash 信号として panic を使用。初期コーパスは
+  任意。
+- ミューテーション: bit-flip, byte-replace, interesting-byte,
+  insert, delete, splice (コーパスから), swap。
+- 最小化: 1 バイト削除 + ゼロ置換のパスを greedy に適用。
+- 再現用環境変数 `PROPCHECK_FUZZ_SEED`。
 
-## Examples
+## サンプル
 
-- `sort_props` — sort idempotence / preservation / non-decreasing.
-- `fail_demo` — deliberate failure showing shrinking output.
-- `find_crash` — fuzzes a planted-bug parser.
+- `sort_props` — ソートの冪等性 / 長さ保存 / 非減少。
+- `fail_demo` — 意図的失敗時のシュリンク出力デモ。
+- `find_crash` — バグを仕込んだパーサのファジング。
 
-## Not yet
+## 未対応 (この時点)
 
-The initial release intentionally omitted:
+初期リリースでは意図的に以下を含めず:
 
-- Custom strategies / combinators (added in M2).
-- `#[derive(Arbitrary)]` (added in M3).
-- Assertion macros, `prop_assume!`, classify, async, state machines —
-  all added in later milestones.
+- カスタム strategy / コンビネータ (M2 で追加)。
+- `#[derive(Arbitrary)]` (M3 で追加)。
+- アサーションマクロ、`prop_assume!`、classify、async、状態機械 —
+  以降のマイルストーンで全部追加。

@@ -1,32 +1,31 @@
 # propcheck
 
-Property-based testing and fuzzing for Rust, **with zero external
-dependencies** — only the standard library and the compiler-provided
-`proc_macro` crate.
+Rust 向けのプロパティベーステスト + ファジングライブラリ。
+**外部依存ゼロ** — std とコンパイラ提供の `proc_macro` クレートのみ。
 
-See [`BACKLOG.md`](BACKLOG.md) for the current state, planned items,
-and explicit non-goals. Major design decisions and gap analyses live
-under [`.claude/plans/`](.claude/plans/).
+現在の状態・計画中の項目・明示的な非ゴールは
+[`BACKLOG.md`](BACKLOG.md) を参照してください。主要な設計判断と
+gap 分析は [`.claude/plans/`](.claude/plans/) 配下にあります。
 
-The workspace is split into four crates:
+ワークスペースは 4 クレートに分かれています:
 
-| Crate              | Purpose                                                              |
-|--------------------|----------------------------------------------------------------------|
-| `propcheck-core`   | `Rng`, `XorShift64`, `Arbitrary` trait, `strategy::*` combinators    |
-| `propcheck-derive` | `#[derive(Arbitrary)]` and `#[propcheck]` proc-macros                |
-| `propcheck`        | Test runner, assertion macros, regression shrinking                  |
-| `propcheck-fuzz`   | In-process mutation fuzzer (`fuzz` + `fuzz_typed`)                   |
+| クレート           | 目的                                                                  |
+|--------------------|-----------------------------------------------------------------------|
+| `propcheck-core`   | `Rng`, `XorShift64`, `Arbitrary` trait, `strategy::*` コンビネータ    |
+| `propcheck-derive` | `#[derive(Arbitrary)]` と `#[propcheck]` proc-macro                   |
+| `propcheck`        | テストランナー、アサーションマクロ、regression shrinking              |
+| `propcheck-fuzz`   | in-process ミューテーション・ファザー (`fuzz` + `fuzz_typed`)         |
 
-Most users only need `propcheck`. It re-exports everything from
-`propcheck-core` and `propcheck-derive`.
+通常は `propcheck` だけで足ります。`propcheck-core` と
+`propcheck-derive` の内容をすべて再エクスポートしています。
 
 ```toml
 [dev-dependencies]
 propcheck = { path = "crates/propcheck" }
-propcheck-fuzz = { path = "crates/propcheck-fuzz" }   # optional, only for fuzzing
+propcheck-fuzz = { path = "crates/propcheck-fuzz" }   # オプション、ファジング用
 ```
 
-## Quick start
+## クイックスタート
 
 ```rust
 use propcheck::{propcheck, prop_assert_eq};
@@ -36,53 +35,53 @@ fn addition_is_commutative(a: i32, b: i32) {
     prop_assert_eq!(a.wrapping_add(b), b.wrapping_add(a));
 }
 
-// Override defaults with attribute args:
+// 属性引数でデフォルトを上書き:
 #[propcheck(cases = 10_000, seed = 42, max_size = 200)]
 fn stress_test(v: Vec<u32>) {
     prop_assert_eq!(v.len(), v.iter().count());
 }
 ```
 
-`cargo test` runs the property 100 times by default. On failure, the runner
-shrinks the inputs to a minimal counterexample, prints both sides of the
-assertion, and emits a `PROPCHECK_SEED` so the run can be reproduced. The
-same seed is appended to `target/propcheck-regressions/<test>.txt` so it
-will be replayed automatically at the start of the next run.
+`cargo test` でプロパティをデフォルト 100 回実行します。失敗時は
+ランナーが入力を最小反例まで shrink し、アサーションの両辺を表示し、
+再現用の `PROPCHECK_SEED` を出力します。同じ seed は
+`target/propcheck-regressions/<test>.txt` に追記され、次回ラン冒頭で
+自動再生されます。
 
-## What's in the box
+## 同梱機能
 
-| Feature                                | Where it lives                                |
-|----------------------------------------|-----------------------------------------------|
-| `#[derive(Arbitrary)]` (struct & enum) | `propcheck::Arbitrary` (macro namespace)      |
-| `#[arbitrary(strategy = ...)]`         | Per-field strategy override on derive         |
-| `#[propcheck]` attribute               | `propcheck::propcheck`                        |
-| `#[propcheck(cases = N, seed = N, ..)]`| Same, with `key = literal` args               |
-| `#[propcheck] async fn ...`            | Uses built-in `block_on` — no runtime needed  |
-| `prop_assert!{,_eq,_ne,_matches,_close}!`| `propcheck::prop_assert*!`                  |
-| `prop_assume!` / `prop_skip!`          | Discard (bad input) vs skip (bad env)         |
-| `prop_with_context!`                   | Scoped context strings in failure messages    |
-| `classify!`                            | Per-case label distribution report            |
-| `IntoPropResult` (bool/`()`/`Result`)  | `?` operator + `Result<(), E>` in properties  |
-| `prop_oneof!` / `prop_compose!`        | Strategy combinator macros                    |
-| `prop_recursive!` / `prop_filter!`     | Recursive trees & filtered strategies         |
-| `Strategy::flat_map`                   | Dependent generation                          |
-| Strategy combinators                   | `propcheck::strategy::*`                      |
-| String generators                      | `propcheck::strategy::str::*` (ascii, hex, …) |
-| `char_range` / `bytes` / `f64_range`   | `propcheck::strategy::{char_range, bytes, f32_range, f64_range}` |
-| State-machine testing                  | `propcheck::state_machine::run_state_machine` |
-| Differential testing                   | `propcheck::{differential, differential_with}`|
-| Greedy / Exhaustive shrink             | `Config::shrink_mode`                         |
-| Regression auto-replay                 | On by default; toggle `Config::regression_replay` |
-| Outcome accessors                      | `.is_passed()`, `.failure_message()`, `.shrunk()`, … |
-| Mutation byte fuzzer                   | `propcheck_fuzz::fuzz`                        |
-| Typed fuzzer (`Arbitrary`-driven)      | `propcheck_fuzz::fuzz_typed`                  |
-| Fuzz dictionary                        | `FuzzConfig::dictionary`                      |
-| Continue after crash + dedup           | `FuzzConfig::{continue_after_crash, dedup_by_message}` |
-| Corpus / crash persistence             | `FuzzConfig::{corpus_dir, crash_dir}`         |
+| 機能                                       | 場所                                                |
+|--------------------------------------------|-----------------------------------------------------|
+| `#[derive(Arbitrary)]` (struct & enum)     | `propcheck::Arbitrary` (マクロ名前空間)             |
+| `#[arbitrary(strategy = ...)]`             | derive のフィールド単位 strategy 上書き             |
+| `#[propcheck]` 属性                        | `propcheck::propcheck`                              |
+| `#[propcheck(cases = N, seed = N, ..)]`    | 同上、`key = literal` 引数付き                      |
+| `#[propcheck] async fn ...`                | 組み込み `block_on` を使う — ランタイム不要         |
+| `prop_assert!{,_eq,_ne,_matches,_close}!`  | `propcheck::prop_assert*!`                          |
+| `prop_assume!` / `prop_skip!`              | 不適切な入力 / 不適切な環境を切り分け               |
+| `prop_with_context!`                       | 失敗メッセージ内のスコープ付きコンテキスト文字列    |
+| `classify!`                                | ケースごとのラベル分布レポート                      |
+| `IntoPropResult` (bool/`()`/`Result`)      | プロパティ内で `?` 演算子 + `Result<(), E>` 戻り    |
+| `prop_oneof!` / `prop_compose!`            | Strategy コンビネータマクロ                         |
+| `prop_recursive!` / `prop_filter!`         | 再帰木 / フィルタ付き strategy                      |
+| `Strategy::flat_map`                       | 依存生成                                            |
+| Strategy コンビネータ                      | `propcheck::strategy::*`                            |
+| 文字列ジェネレータ                         | `propcheck::strategy::str::*` (ascii, hex, …)       |
+| `char_range` / `bytes` / `f64_range`       | `propcheck::strategy::{char_range, bytes, f32_range, f64_range}` |
+| 状態機械テスト                             | `propcheck::state_machine::run_state_machine`       |
+| Differential テスト                        | `propcheck::{differential, differential_with}`      |
+| Greedy / Exhaustive shrink                 | `Config::shrink_mode`                               |
+| Regression 自動再生                        | デフォルト ON。`Config::regression_replay` で切替   |
+| Outcome アクセサ                           | `.is_passed()`, `.failure_message()`, `.shrunk()`, … |
+| ミューテーション・バイトファザー           | `propcheck_fuzz::fuzz`                              |
+| 型付きファザー (`Arbitrary` 駆動)          | `propcheck_fuzz::fuzz_typed`                        |
+| Fuzz dictionary                            | `FuzzConfig::dictionary`                            |
+| Crash 後継続 + 重複排除                    | `FuzzConfig::{continue_after_crash, dedup_by_message}` |
+| コーパス / crash 永続化                    | `FuzzConfig::{corpus_dir, crash_dir}`               |
 
-## Patterns
+## パターン集
 
-### 1. Round-trip a serializer
+### 1. シリアライザのラウンドトリップ
 
 ```rust
 use propcheck::{propcheck, prop_assert_eq, Arbitrary};
@@ -100,12 +99,12 @@ fn from_bytes(b: &[u8]) -> Result<Config, Error> { /* ... */ }
 #[propcheck]
 fn config_round_trips(c: Config) {
     let bytes = to_bytes(&c);
-    let back = from_bytes(&bytes).expect("our own serializer should parse");
+    let back = from_bytes(&bytes).expect("自前のシリアライザはパースできるはず");
     prop_assert_eq!(c, back);
 }
 ```
 
-### 2. Test a sort against its specification
+### 2. ソートを仕様に対してテスト
 
 ```rust
 use propcheck::{propcheck, prop_assert};
@@ -128,7 +127,7 @@ fn sort_is_idempotent(v: Vec<i32>) {
 }
 ```
 
-### 3. Properties with preconditions
+### 3. 前提条件付きプロパティ
 
 ```rust
 use propcheck::{propcheck, prop_assume, prop_assert};
@@ -144,11 +143,12 @@ fn binary_search_finds_existing(v: Vec<u32>, idx: usize) {
 }
 ```
 
-`prop_assume!` discards the case and generates a fresh one. Excessive
-discards (more than `Config::max_discards`, default 10× the case count) abort
-the run with a clear message — so a noisy `prop_assume!` is hard to miss.
+`prop_assume!` はそのケースを破棄して新しいケースを生成します。
+破棄が多すぎる場合 (`Config::max_discards`、デフォルトはケース数の
+10 倍) は明確なメッセージとともにランを中断します — ノイジーな
+`prop_assume!` に気付きやすくなっています。
 
-### 4. Constrain generated values with a `Strategy`
+### 4. `Strategy` で生成値を制約する
 
 ```rust
 use propcheck::{run_strategy, prop_assert};
@@ -165,18 +165,18 @@ fn percentage_stays_in_range() {
 }
 ```
 
-Available combinators in `propcheck::strategy`:
+`propcheck::strategy` で使える主なコンビネータ:
 
-- `any::<T>()` — defer to `T::Arbitrary`
-- `just(v)` — constant
-- `int_range(lo..hi)` — integer in `[lo, hi)`, shrinks toward 0 or `lo`
-- `vec_of(elem, len_range)` — variable-length `Vec<T>` respecting `min_len`
-- `one_of(vec![...])` — uniform choice; `weighted_one_of` for biased
-- `tuple(a, b)` — product
-- `.map(f)` / `.filter(pred)` / `.boxed()` on any strategy
-- `prop_oneof![a, b]` or `prop_oneof![1 => a, 4 => b]` — convenience macro
+- `any::<T>()` — `T::Arbitrary` に委譲
+- `just(v)` — 定数
+- `int_range(lo..hi)` — `[lo, hi)` の整数。0 か `lo` に向けて shrink
+- `vec_of(elem, len_range)` — 可変長 `Vec<T>`。`min_len` を尊重
+- `one_of(vec![...])` — 一様選択。`weighted_one_of` でバイアス可
+- `tuple(a, b)` — 直積
+- 任意の strategy に `.map(f)` / `.filter(pred)` / `.boxed()`
+- `prop_oneof![a, b]` や `prop_oneof![1 => a, 4 => b]` — 便利マクロ
 
-### 5. Fuzz a byte-oriented target
+### 5. バイト指向ターゲットをファズ
 
 ```rust
 use propcheck_fuzz::{fuzz, FuzzConfig};
@@ -190,7 +190,7 @@ fn parser_does_not_panic() {
 }
 ```
 
-### 6. Fuzz a typed API
+### 6. 型付き API をファズ
 
 ```rust
 use propcheck_fuzz::{fuzz_typed, TypedFuzzConfig};
@@ -204,11 +204,11 @@ fn json_query_never_panics() {
 }
 ```
 
-Any type with an `Arbitrary` impl can drive `fuzz_typed`. The mutator
-operates on the byte seed, so it explores a wide variety of inputs without
-needing a hand-written `&[u8] → T` decoder.
+`Arbitrary` を実装した任意の型を `fuzz_typed` で駆動できます。
+ミューテータはバイト seed 上で動くため、手書きの `&[u8] → T`
+デコーダ無しで多様な入力を探索します。
 
-### 7. Diagnose generator distribution with `classify!`
+### 7. `classify!` でジェネレータの分布を診断
 
 ```rust
 use propcheck::{run, classify};
@@ -221,17 +221,17 @@ run("sort handles every input", |v: &Vec<i32>| {
     s.sort();
     s.windows(2).all(|w| w[0] <= w[1])
 });
-// Output ends with:
+// 出力末尾:
 //   classifications:
 //      40.0%  empty            (40/100)
 //      20.0%  has-duplicates   (20/100)
 //      10.0%  large            (10/100)
 ```
 
-If "large" is 0% you know your test isn't actually exercising the long-input
-path and need to bump `max_size` or use a custom strategy.
+"large" が 0% なら長い入力経路を実際には行使できていない、と分かる
+ので `max_size` を上げるかカスタム strategy を使う必要があります。
 
-### 8. Collect every distinct crash from a fuzz run
+### 8. ファズランから全 distinct crash を回収
 
 ```rust
 use propcheck_fuzz::{fuzz, FuzzConfig};
@@ -254,12 +254,12 @@ for f in &report.failures {
 }
 ```
 
-`dictionary` lifts the fuzzer past multi-byte gates a dumb mutator would
-take eons to discover. `continue_after_crash` + `dedup_by_message` collect
-every unique panic. `crash_dir` saves a `.bin` reproducer and matching
-`.txt` metadata for each one.
+`dictionary` は素朴なミューテータでは到達に永遠を要する複数バイトの
+ゲートを越えさせます。`continue_after_crash` + `dedup_by_message` で
+ユニークな panic をすべて収集。`crash_dir` には `.bin` 再現ファイルと
+対応する `.txt` メタデータが保存されます。
 
-### 9. State-machine / model-based testing
+### 9. 状態機械 / モデルベーステスト
 
 ```rust
 use propcheck::state_machine::{run_state_machine, StateMachine};
@@ -295,12 +295,11 @@ fn vec_matches_reference() {
 }
 ```
 
-The runner generates sequences of operations, applies them in order, and
-checks the invariant after each step. Failing sequences are shrunk by
-greedy operation-removal until no more ops can be deleted while keeping
-the invariant violated.
+ランナーは操作列を生成して順に適用し、各ステップ後に不変条件を確認
+します。失敗列は、不変条件違反を保ったまま削除できる操作が無くなる
+まで greedy な操作削除で shrink されます。
 
-### 10. Async property tests
+### 10. Async プロパティテスト
 
 ```rust
 use propcheck::{propcheck, prop_assert_eq};
@@ -314,13 +313,13 @@ async fn http_parse_round_trips(req: Request) -> Result<(), Error> {
 }
 ```
 
-The attribute macro detects `async fn` and drives the body with a built-in
-single-threaded executor (`propcheck::block_on`). No tokio / async-std
-dependency is introduced. Real I/O is not supported by the built-in
-executor; for tokio code, write a non-async wrapper that calls
-`tokio::runtime::Runtime::new()?.block_on(...)` instead.
+属性マクロは `async fn` を検出し、本体を組み込みのシングルスレッド
+executor (`propcheck::block_on`) で駆動します。tokio や async-std
+への依存は導入されません。組み込み executor は実 I/O はサポート
+しません — tokio コードを使うなら、`tokio::runtime::Runtime::new()?.block_on(...)`
+を呼ぶ非 async なラッパを書いてください。
 
-### 11. Differential testing
+### 11. Differential テスト
 
 ```rust
 propcheck::differential(
@@ -330,9 +329,9 @@ propcheck::differential(
 );
 ```
 
-On disagreement, both outputs and the shrunk input are reported.
+不一致時には両出力と shrink された入力が報告されます。
 
-### 12. Constrain `#[derive(Arbitrary)]` per-field
+### 12. `#[derive(Arbitrary)]` をフィールド単位で制約
 
 ```rust
 use propcheck::{Arbitrary, propcheck, prop_assert};
@@ -356,22 +355,22 @@ fn request_is_valid(r: Request) {
 }
 ```
 
-Both the string-literal form `"expr"` (proptest-style) and the bare
-expression form are supported. The strategy expression must be visible
-where the `#[derive]` lives (typically `use propcheck::strategy::*;` at
-the top of the file). Per-field shrinking flows through the strategy:
-in the example above the `port` field will shrink toward `1024`, never
-below.
+文字列リテラル形式 `"expr"` (proptest スタイル) と裸の式形式の
+両方をサポート。strategy 式は `#[derive]` を書いた場所から見えて
+いる必要があります (典型的にはファイル冒頭に
+`use propcheck::strategy::*;`)。フィールド単位の shrink も strategy
+を通ります — 上の例では `port` フィールドは `1024` まで縮みますが
+それを下回ることはありません。
 
-### 13. Dependent generation with `flat_map`
+### 13. `flat_map` による依存生成
 
 ```rust
 use propcheck::strategy::{any, int_range, vec_of, StrategyExt};
-// First pick a length, then a Vec of exactly that length:
+// まず長さを決め、その後にちょうどその長さの Vec を生成:
 let s = int_range(1usize..10).flat_map(|len| vec_of(any::<i32>(), len..len + 1));
 ```
 
-### 14. Recursive data with `prop_recursive!`
+### 14. `prop_recursive!` による再帰データ
 
 ```rust
 use propcheck::{prop_oneof, prop_recursive};
@@ -395,7 +394,7 @@ let json = prop_recursive! {
 };
 ```
 
-### 15. Approximate float comparison
+### 15. 浮動小数点の近似比較
 
 ```rust
 use propcheck::{propcheck, prop_assert_close, prop_assume};
@@ -406,9 +405,9 @@ fn double_angle_identity(x: f64) {
 }
 ```
 
-## Reproducing a failure
+## 失敗の再現
 
-Failures print a seed:
+失敗時は seed が出力されます:
 
 ```
 [propcheck] my_test FAILED at case #4 (PROPCHECK_SEED=12345, 0 discarded)
@@ -419,20 +418,22 @@ Failures print a seed:
   shrunk:   ...
 ```
 
-Three ways to reproduce:
+再現方法は 3 通り:
 
-1. **Automatic** — failing seeds are appended to
-   `target/propcheck-regressions/<test>.txt` and replayed first on the next
-   run. No manual step required; just run `cargo test` again.
-2. **Env var** — `PROPCHECK_SEED=12345 cargo test my_test`.
-3. **Config override** — `#[propcheck(seed = 12345)]` on the test function,
-   or `Config { seed: 12345, ..Config::default() }` for `run_with`.
+1. **自動** — 失敗 seed は
+   `target/propcheck-regressions/<test>.txt` に追記され、次回ラン
+   冒頭で再生されます。手動操作は不要 — `cargo test` を再実行する
+   だけ。
+2. **環境変数** — `PROPCHECK_SEED=12345 cargo test my_test`。
+3. **Config 上書き** — テスト関数に `#[propcheck(seed = 12345)]`、
+   または `run_with` 用に `Config { seed: 12345, ..Config::default() }`。
 
-The fuzz crate uses `PROPCHECK_FUZZ_SEED` in the same way.
+fuzz クレートは同じ仕組みで `PROPCHECK_FUZZ_SEED` を使います。
 
-## Tuning a run
+## ラン設定の調整
 
-`run` and `forall` use `Config::default()`. To customize, use `run_with`:
+`run` と `forall` は `Config::default()` を使います。カスタマイズには
+`run_with` を使います:
 
 ```rust
 use propcheck::{run_with, Config};
@@ -449,25 +450,28 @@ run_with(
 );
 ```
 
-## Limitations
+## 制約
 
-- `#[derive(Arbitrary)]` supports structs (named, tuple, unit) and generic
-  structs whose type parameters all need `Arbitrary`. Enums and structs with
-  a custom `where` clause must implement `Arbitrary` by hand.
-- The fuzzer has no coverage feedback. It's a "smoke fuzzer" for catching
-  panics on random and mutated inputs, not a replacement for libFuzzer or
-  cargo-fuzz when those are available.
-- The runner installs a process-global panic hook (refcounted for safety).
-  Property tests in different threads share that hook installation; mixing
-  with code that takes/sets the panic hook concurrently can race.
-- No async-fn support.
+- `#[derive(Arbitrary)]` は struct (named, tuple, unit) と、すべての
+  型パラメータが `Arbitrary` を必要とするジェネリック struct を
+  サポートします。enum および独自の `where` 句を持つ struct も
+  扱えますが、複雑なケースでは手書きで `Arbitrary` を実装する方が
+  分かりやすい場合があります。
+- ファザーにはカバレッジフィードバックがありません。ランダム / 変異
+  入力で panic を捕まえる「スモークファザー」であり、libFuzzer や
+  cargo-fuzz が使える場面ではそれらの代替にはなりません。
+- ランナーはプロセスグローバルな panic hook をインストールします
+  (安全のため参照カウント済み)。別スレッドで動くプロパティテストは
+  この install を共有するため、panic hook を別途取得 / 設定する
+  コードと並行すると競合し得ます。
+- `panic = "abort"` プロファイルは非対応です。
 
-## Running the test suite
+## テストスイートの実行
 
 ```
 cargo test --workspace
 cargo clippy --workspace --all-targets -- -D warnings
 cargo run --example sort_props   -p propcheck
-cargo run --example derive_demo  -p propcheck   # demonstrates a failing property
+cargo run --example derive_demo  -p propcheck   # 失敗するプロパティをデモ
 cargo run --release --example find_crash -p propcheck-fuzz
 ```

@@ -1,247 +1,245 @@
-# Backlog
+# バックログ
 
-Status snapshot for the `propcheck` workspace. Updated 2026-05-24.
+`propcheck` ワークスペースの状況スナップショット。更新日: 2026-05-24。
 
-- Repository state: all changes committed and pushed on
-  `claude/property-based-testing-lib-V4Q5s`.
-- Test suite: **153 unit + integration tests pass**, plus doc tests.
-- Lint: `cargo clippy --workspace --all-targets -- -D warnings` clean.
-- Dependency policy: std + the compiler-provided `proc_macro` crate only.
-- `unsafe_code = "forbid"` at the workspace level (the minimal `block_on`
-  executor uses `std::pin::pin!` to avoid unsafe).
+- リポジトリ状態: すべての変更を `claude/property-based-testing-lib-V4Q5s`
+  ブランチにコミット・プッシュ済み。
+- テストスイート: **ユニット + 統合テスト 153 件 pass**。doc テストも含む。
+- Lint: `cargo clippy --workspace --all-targets -- -D warnings` clean。
+- 依存方針: std とコンパイラ組み込みの `proc_macro` クレートのみ。
+- ワークスペース全体で `unsafe_code = "forbid"` (最小 `block_on` executor
+  も `std::pin::pin!` を使い unsafe 回避)。
 
-## Legend
+## 凡例
 
-- ✅ Done — shipped on the current branch.
-- 🟡 Backlog — proposed but not implemented.
-- ❌ Won't do — explicitly out of scope.
-- ⚠️ Known limitation — acknowledged but not a blocker.
+- ✅ 完了 — 現ブランチに反映済み。
+- 🟡 バックログ — 提案済みだが未実装。
+- ❌ やらない — 明示的にスコープ外と判断。
+- ⚠️ 既知の制約 — 認識しているが、現時点ではブロッカーではない。
 
 ---
 
-## ✅ Done
+## ✅ 完了
 
-Grouped by the commit / milestone in which it landed.
+着地したコミット / マイルストーン別に分類。
 
-### M1 — Initial workspace (commit `793f067`)
+### M1 — 初期ワークスペース (コミット `793f067`)
 
-- ✅ Workspace skeleton with three crates: `propcheck-core`, `propcheck`,
-  `propcheck-fuzz`.
-- ✅ `Rng` trait + `XorShift64` PRNG.
-- ✅ `Arbitrary` trait + impls for primitives, `Vec`, `String`, `Option`,
-  `Result`, tuples (2-arity through 4-arity).
-- ✅ Property runner with `forall` / `run`, automatic shrinking,
-  `Outcome::{Passed, Failed}`, panic-capture as failure.
-- ✅ Seed-based reproduction via `PROPCHECK_SEED`.
-- ✅ Mutation byte fuzzer (`fuzz`), corpus splicing, panic-driven crash
-  minimization, `PROPCHECK_FUZZ_SEED`.
+- ✅ 3 クレート構成のワークスペース骨格: `propcheck-core`, `propcheck`,
+  `propcheck-fuzz`。
+- ✅ `Rng` trait + `XorShift64` PRNG。
+- ✅ `Arbitrary` trait + プリミティブ・`Vec`・`String`・`Option`・
+  `Result`・タプル (2〜4 アリティ) の実装。
+- ✅ プロパティランナー: `forall` / `run`、自動シュリンク、
+  `Outcome::{Passed, Failed}`、panic を失敗として捕捉。
+- ✅ `PROPCHECK_SEED` による seed ベース再現。
+- ✅ ミューテーション・バイトファザー (`fuzz`)、コーパス splicing、
+  panic 駆動の crash minimization、`PROPCHECK_FUZZ_SEED`。
 
-### M2 — Strategy combinators & more impls (commit `27c663d`)
+### M2 — Strategy コンビネータと追加 impl (コミット `27c663d`)
 
-- ✅ `Strategy` trait + `StrategyExt` extension trait.
-- ✅ Combinators: `any`, `just`, `int_range`, `vec_of`, `one_of`,
-  `weighted_one_of`, `tuple`, `Map`, `Filter`, `BoxedStrategy`.
-- ✅ Additional `Arbitrary` impls: `HashMap`, `HashSet`, `BTreeMap`,
-  `BTreeSet`, `VecDeque`, `[T; N]`, `Box<T>`, `Range<T>`, `Duration`.
-- ✅ Object-safe `Rng` (`Self: Sized` bound on generic methods).
-- ✅ MSRV bumped to **1.82** (for `PanicHookInfo`).
+- ✅ `Strategy` trait + `StrategyExt` 拡張 trait。
+- ✅ コンビネータ: `any`, `just`, `int_range`, `vec_of`, `one_of`,
+  `weighted_one_of`, `tuple`, `Map`, `Filter`, `BoxedStrategy`。
+- ✅ 追加 `Arbitrary` 実装: `HashMap`, `HashSet`, `BTreeMap`,
+  `BTreeSet`, `VecDeque`, `[T; N]`, `Box<T>`, `Range<T>`, `Duration`。
+- ✅ Object-safe な `Rng` (ジェネリックメソッドに `Self: Sized` 制約)。
+- ✅ MSRV を **1.82** へ引き上げ (`PanicHookInfo` のため)。
 
-### M3 — Derive macros, assertions, typed fuzz (commit `ef9f8b1`)
+### M3 — Derive マクロ、アサーション、型付きファズ (コミット `ef9f8b1`)
 
-- ✅ New `propcheck-derive` crate (hand-rolled, no `syn`/`quote`).
-- ✅ `#[derive(Arbitrary)]` for named-field, tuple, and unit structs
-  including generics.
-- ✅ `#[propcheck]` attribute macro on free functions (0/1/N args).
-- ✅ `prop_assert!`, `prop_assert_eq!`, `prop_assert_ne!` macros with
-  rich failure messages (file, line, both sides).
-- ✅ `prop_assume!` macro + structured `PropDiscard` payload.
-- ✅ `fuzz_typed<T: Arbitrary>`: byte seed → `T::arbitrary` typed fuzz.
-- ✅ Convenience `Outcome::Failed` panic format with reproduction hint.
+- ✅ 新クレート `propcheck-derive` (手書きパーサ、`syn`/`quote` 不使用)。
+- ✅ `#[derive(Arbitrary)]` を named-field / tuple / unit 構造体に対応、
+  ジェネリクスも含む。
+- ✅ `#[propcheck]` 属性マクロ (引数 0/1/N 全対応)。
+- ✅ `prop_assert!`, `prop_assert_eq!`, `prop_assert_ne!` マクロ
+  (ファイル名・行番号・両辺の値を含む詳細な失敗メッセージ)。
+- ✅ `prop_assume!` マクロ + 構造化された `PropDiscard` ペイロード。
+- ✅ `fuzz_typed<T: Arbitrary>`: バイトシードを `T::arbitrary` に渡す
+  型付きファジング。
+- ✅ `Outcome::Failed` のパニック表示に再現情報を含める便利出力。
 
-### M4 — Tier-B additions (commit `59724cd`)
+### M4 — Tier-B 追加 (コミット `59724cd`)
 
-- ✅ `classify!` macro + `Classifications` aggregation, rendered in
-  the run summary.
-- ✅ `IntoPropResult` trait: properties may return `bool`, `()`,
-  `Result<(), E>`, or `PropResult` directly (`?` works in property body).
+- ✅ `classify!` マクロ + `Classifications` 集計、ラン結果サマリに描画。
+- ✅ `IntoPropResult` trait: プロパティが `bool`, `()`, `Result<(), E>`,
+  `PropResult` のいずれかを返せる (`?` 演算子もプロパティ本体で使える)。
 - ✅ `#[propcheck(cases = N, seed = N, max_shrinks = N, max_size = N,
-  max_discards = N, max_skips = N)]` attribute arguments.
-- ✅ Regression auto-replay to
-  `target/propcheck-regressions/<test>.txt` (replayed at next run).
-- ✅ Thread-safe `SilentPanicHook` (atomic refcount + Mutex).
-- ✅ Additional `Arbitrary` impls: `Rc<T>`, `Arc<T>`, `Cell<T>`,
+  max_discards = N, max_skips = N)]` 属性引数。
+- ✅ 失敗 seed の自動再現: `target/propcheck-regressions/<test>.txt`
+  に保存し次回ラン冒頭で再生。
+- ✅ thread-safe な `SilentPanicHook` (アトミック参照カウント + Mutex)。
+- ✅ 追加 `Arbitrary` 実装: `Rc<T>`, `Arc<T>`, `Cell<T>`,
   `RefCell<T>`, `PathBuf`, `OsString`, `Ipv4Addr`, `Ipv6Addr`, `IpAddr`,
-  `SocketAddrV4`, `SocketAddrV6`, `SocketAddr`, `NonZero{U,I}*` for all
-  integer widths including `{Usize, Isize}`.
-- ✅ Fuzz dictionary (`FuzzConfig::dictionary`).
-- ✅ Crash dedup + multi-crash collection (`continue_after_crash`,
-  `dedup_by_message`, `FuzzReport::failures: Vec<Failure>`).
-- ✅ Disk persistence: `FuzzConfig::{corpus_dir, crash_dir}` with
-  hash-based filenames.
+  `SocketAddrV4`, `SocketAddrV6`, `SocketAddr`、全整数幅
+  (`{Usize, Isize}` 含む) の `NonZero{U,I}*`。
+- ✅ Fuzz dictionary (`FuzzConfig::dictionary`)。
+- ✅ Crash 重複排除 + 複数 crash 蓄積 (`continue_after_crash`,
+  `dedup_by_message`, `FuzzReport::failures: Vec<Failure>`)。
+- ✅ ディスク永続化: `FuzzConfig::{corpus_dir, crash_dir}`、
+  ハッシュベースのファイル名。
 
-### M5 — Tier S/A/B (commit `48eba2e`)
+### M5 — Tier S/A/B (コミット `48eba2e`)
 
-- ✅ `#[derive(Arbitrary)]` for **enums** (unit, tuple, and named-field
-  variants), with shrink-to-simplest-variant collapse when possible.
-- ✅ `where`-clause support on `#[derive(Arbitrary)]`.
-- ✅ String structured generators in `propcheck::strategy::str`:
+- ✅ `#[derive(Arbitrary)]` の **enum** 対応 (unit / tuple / named-field
+  バリアント)、可能なら simplest-variant への shrink collapse。
+- ✅ `#[derive(Arbitrary)]` の `where` 句サポート。
+- ✅ `propcheck::strategy::str` モジュールに文字列構造化ジェネレータ群:
   `ascii_digits`, `ascii_letters_{lower,upper}`, `ascii_letters`,
-  `ascii_alphanumeric`, `hex_string`, `ascii_printable`, `from_char_set`.
-- ✅ `prop_assert_matches!` macro (with optional `if` guard).
-- ✅ `prop_compose!` macro for declarative composite strategies.
-- ✅ Tuple `Arbitrary` arities 5..=8.
-- ✅ State-machine framework (`propcheck::state_machine`):
-  `StateMachine` trait + `run_state_machine`, with operation-sequence
-  shrinking.
-- ✅ Async support: built-in `block_on` (`std::pin::pin!`-based, zero
-  unsafe) + `#[propcheck] async fn` wrapper.
-- ✅ Failure categorisation: `PropSkip` payload + `prop_skip!` macro,
-  counted separately via `Config::max_skips`.
-- ✅ `prop_with_context!` macro with thread-local context stack
-  appended to assertion messages.
-- ✅ `Outcome` accessor methods: `is_passed`, `is_failed`, `is_aborted`,
-  `failure_message`, `shrunk`, `original`, `cases`, `discarded`,
-  `skipped`, `seed`, `classifications`.
-- ✅ Float gen / shrink improvements (NaN, `EPSILON`, `MIN_POSITIVE`,
-  `round`, one-ULP-step).
-- ✅ Differential testing helper (`differential`, `differential_with`).
-- ✅ `Config::shrink_mode` with `ShrinkMode::{Greedy, Exhaustive}`.
+  `ascii_alphanumeric`, `hex_string`, `ascii_printable`, `from_char_set`。
+- ✅ `prop_assert_matches!` マクロ (オプションで `if` ガード対応)。
+- ✅ `prop_compose!` マクロによる宣言的な複合ジェネレータ。
+- ✅ タプル `Arbitrary` のアリティを 5〜8 まで拡張。
+- ✅ 状態機械フレームワーク (`propcheck::state_machine`):
+  `StateMachine` trait + `run_state_machine`、操作列シュリンク付き。
+- ✅ Async サポート: 組み込み `block_on` (`std::pin::pin!` ベース、
+  unsafe ゼロ) + `#[propcheck] async fn` のラッパー。
+- ✅ 失敗カテゴリ: `PropSkip` ペイロード + `prop_skip!` マクロ、
+  `Config::max_skips` で別カウント。
+- ✅ `prop_with_context!` マクロ。thread-local コンテキストスタックを
+  アサーションメッセージに付加。
+- ✅ `Outcome` のアクセサメソッド群: `is_passed`, `is_failed`,
+  `is_aborted`, `failure_message`, `shrunk`, `original`, `cases`,
+  `discarded`, `skipped`, `seed`, `classifications`。
+- ✅ Float 生成 / shrink の改善 (NaN, `EPSILON`, `MIN_POSITIVE`,
+  `round`, 1-ULP step)。
+- ✅ Differential testing ヘルパー (`differential`, `differential_with`)。
+- ✅ `Config::shrink_mode` (`ShrinkMode::{Greedy, Exhaustive}`)。
 
-### M6 — Field attrs + dependent / recursive generation (commit `45e9d00`)
+### M6 — フィールド属性 + 依存 / 再帰生成 (コミット `45e9d00`)
 
-- ✅ `#[arbitrary(strategy = ...)]` field attribute on
-  `#[derive(Arbitrary)]`. Supports both the string-literal
-  (`"expr"`-as-string, proptest-style) and bare-expression forms.
-  Applies to named-field structs, tuple structs, and enum variants
-  (both shapes).
-- ✅ `Strategy::flat_map` / `FlatMap` for dependent generation.
-- ✅ `prop_recursive! { leaf = …, inner = …, max_depth = N }` macro
-  for trees / ASTs / JSON-like values.
-- ✅ `char_range(lo..hi)` strategy.
-- ✅ `bytes(len_range)` strategy (sugar over `vec_of(any::<u8>(), …)`).
-- ✅ `f32_range` / `f64_range` strategies with shrink-toward-0 / lo.
-- ✅ `prop_assert_close!` for approximate float equality.
-- ✅ `Strategy`/`StrategyExt` re-exported at `propcheck::*` so derive's
-  generated paths resolve without users importing `propcheck-core`.
-- ✅ `prop_filter!` macro (sugar over `Strategy::filter`).
+- ✅ `#[derive(Arbitrary)]` のフィールド属性
+  `#[arbitrary(strategy = ...)]`。文字列リテラル形式
+  (`"expr"` 文字列、proptest スタイル) と裸の式形式の両方をサポート。
+  named-field 構造体・tuple 構造体・enum バリアント (両形式) に適用可。
+- ✅ `Strategy::flat_map` / `FlatMap`、依存生成のための。
+- ✅ `prop_recursive! { leaf = …, inner = …, max_depth = N }` マクロ。
+  tree / AST / JSON-like 値の生成に使用。
+- ✅ `char_range(lo..hi)` Strategy。
+- ✅ `bytes(len_range)` Strategy (`vec_of(any::<u8>(), …)` のシンタックスシュガー)。
+- ✅ `f32_range` / `f64_range`、0.0 / lo への shrink 付き。
+- ✅ `prop_assert_close!` マクロ (浮動小数点の近似等価アサート)。
+- ✅ `propcheck::*` から `Strategy` / `StrategyExt` を再エクスポートし、
+  derive 出力のパスが `propcheck-core` の import 無しで解決するように。
+- ✅ `prop_filter!` マクロ (`Strategy::filter` のシンタックスシュガー)。
 
 ---
 
-## 🟡 Backlog (proposed, not implemented)
+## 🟡 バックログ (提案済み、未実装)
 
-Each item carries a rough effort estimate and a one-line agent-impact
-note. Roughly ordered by value.
+各項目には実装コスト見積りと、エージェント影響度の 1 行コメントを
+付与。価値順におおまかに並べてあります。
 
 ### Polish / nice-to-have
 
-- 🟡 **`Strategy::sample(n)`** debug helper (~15 LOC). Lets a user (or
-  agent) inspect what a strategy generates without running a test.
-  Impact: medium — useful while authoring custom strategies.
-- 🟡 **`prop_assert_panic!` / `prop_assert_no_panic!`** (~30 LOC).
-  Asserts a closure panics / doesn't panic. Useful for testing that
-  specific inputs trigger expected panics. Impact: small.
-- 🟡 **`Strategy::no_shrink()`** wrapper (~20 LOC). Disables shrinking
-  for one strategy; useful when shrinking is expensive or distorts the
-  failing case. Impact: small.
+- 🟡 **`Strategy::sample(n)`** デバッグヘルパー (約 15 行)。
+  ユーザ (やエージェント) が、テストを走らせずに strategy が
+  どんな値を生成するか確認できる。影響: 中 — カスタム strategy を
+  書く時に便利。
+- 🟡 **`prop_assert_panic!` / `prop_assert_no_panic!`** (約 30 行)。
+  クロージャが panic する / しないをアサート。特定入力で想定通り
+  panic することのテストに有用。影響: 小。
+- 🟡 **`Strategy::no_shrink()`** ラッパー (約 20 行)。1 つの strategy
+  だけ shrink を無効化。shrink が高コストだったり、失敗ケースが
+  歪んだりする場合に有用。影響: 小。
 
-### More `Arbitrary` impls
+### 追加 `Arbitrary` 実装
 
-- 🟡 `std::collections::BinaryHeap<T>` (~20 LOC).
-- 🟡 `std::collections::LinkedList<T>` (~20 LOC).
-- 🟡 `std::num::Wrapping<T>`, `std::num::Saturating<T>` (~30 LOC).
-- 🟡 `std::cmp::Ordering` (~15 LOC).
-- 🟡 `std::cmp::Reverse<T>` (~15 LOC).
-- 🟡 `std::borrow::Cow<'static, str>` / `Cow<'static, [T]>` (~30 LOC).
+- 🟡 `std::collections::BinaryHeap<T>` (約 20 行)。
+- 🟡 `std::collections::LinkedList<T>` (約 20 行)。
+- 🟡 `std::num::Wrapping<T>`, `std::num::Saturating<T>` (約 30 行)。
+- 🟡 `std::cmp::Ordering` (約 15 行)。
+- 🟡 `std::cmp::Reverse<T>` (約 15 行)。
+- 🟡 `std::borrow::Cow<'static, str>` / `Cow<'static, [T]>` (約 30 行)。
 
-Impact per item: small. Together they round out stdlib coverage.
+各々の影響: 小。合わせて stdlib カバレッジを底上げする位置付け。
 
-### Strategy domain pack
+### ドメイン Strategy パック
 
-- 🟡 **Pre-canned domain strategies**: `email_like`, `url_like`,
-  `uuid_like`, `ipv4_dotted`, `iso8601_date`. ~200 LOC total. Risk:
-  the specs are fuzzy and may not match user-specific notions of
-  "valid". Impact: medium for parser tests.
+- 🟡 **既製ドメイン strategy**: `email_like`, `url_like`,
+  `uuid_like`, `ipv4_dotted`, `iso8601_date`。合計約 200 行。
+  リスク: 仕様が曖昧で、ユーザの想定する「正しい」と必ずしも一致
+  しない。影響: パーサテストでは中。
 
-### CI / reporting
+### CI / レポーティング
 
-- 🟡 **JUnit XML / JSON output** mode (~150 LOC). For dashboards.
-  Impact: low — `cargo test` output suffices for typical use.
-- 🟡 **`cargo propcheck` CLI subcommand** in a new bin crate (~500+
-  LOC). Provides progress bars for long fuzz runs, named-seed
-  reproduction, etc. Impact: low — `cargo test` already works.
+- 🟡 **JUnit XML / JSON 出力** モード (約 150 行)。ダッシュボード用。
+  影響: 低 — 通常用途では `cargo test` の出力で十分。
+- 🟡 **`cargo propcheck` CLI サブコマンド** (新規 bin クレート、
+  500 行以上)。長時間ファズランのプログレスバー、名前付き seed
+  での再現等を提供。影響: 低 — 既に `cargo test` で動く。
 
-### Test scaffolding
+### テスト足回り
 
-- 🟡 **Test result accumulator** — run multiple properties and report
-  every failure at the end rather than panicking on the first one.
-  Large refactor; impact small for typical workflows.
-- 🟡 **`forall!` syntactic-sugar macro** for inline properties (~30
-  LOC). Impact: minor.
+- 🟡 **テスト結果アキュムレータ** — 複数プロパティを走らせて、
+  最初の失敗で panic させずに全失敗をまとめてレポート。
+  大規模なリファクタが必要。典型ワークフローでの影響は小。
+- 🟡 **`forall!` シンタックスシュガーマクロ** (約 30 行)。影響: 軽微。
 
-### Edge cases
+### エッジケース
 
-- 🟡 Lifetime parameters on `#[derive(Arbitrary)]` — references aren't
-  trivially `Arbitrary` (no owned value to generate). Document as
-  unsupported or design a `borrowed` adapter. Impact: small.
-- 🟡 Generic functions under `#[propcheck]` — currently rejected.
-  Adding support means parsing generic params on the test fn and
-  monomorphising at call sites. Impact: small.
-- 🟡 Improved compile-error messages from the derive when a field type
-  doesn't implement `Arbitrary` (currently surfaces as a generic trait
-  bound error). Impact: medium for newcomers; needs proc-macro spans.
-
----
-
-## ❌ Won't do (explicitly out of scope)
-
-These have been considered and rejected, primarily for the no-deps
-policy or because they belong to a different library's responsibility.
-
-- ❌ **Full regex-based string generation** (proptest's `regex`
-  feature). Would require reimplementing `regex` (thousands of LOC)
-  or pulling in the crate. The Tier-S string strategies cover the
-  80% case.
-- ❌ **Coverage-guided fuzzing** (libFuzzer / SanitizerCoverage). Needs
-  LLVM instrumentation that no-deps can't reach. Recommend
-  `cargo-fuzz` for that workflow.
-- ❌ **Real async runtime**. The built-in `block_on` is enough for pure
-  async logic. Network/timer-heavy async code should use tokio
-  directly inside a sync wrapper.
-- ❌ **Snapshot testing** (insta-style). Different testing concern;
-  leave to `insta`.
-- ❌ **Mock / DI framework**. Out of propcheck's responsibility.
-- ❌ **Time / randomness injection**. Belongs to user code or a
-  dedicated faking library.
+- 🟡 `#[derive(Arbitrary)]` の lifetime パラメータ — 参照は
+  そのままでは `Arbitrary` にならない (生成すべき所有値が無い)。
+  非サポートとしてドキュメント化するか、`borrowed` アダプタを
+  設計する。影響: 小。
+- 🟡 `#[propcheck]` のジェネリック関数 — 現状はリジェクト。
+  対応するにはテスト関数のジェネリックパラメータをパースし、
+  呼出側で単相化する必要がある。影響: 小。
+- 🟡 derive のコンパイルエラーメッセージ改善 — フィールド型が
+  `Arbitrary` を実装しない場合、現状は generic な trait 境界
+  エラーになる。新参ユーザには影響: 中。proc-macro span が必要。
 
 ---
 
-## ⚠️ Known limitations
+## ❌ やらない (明示的にスコープ外)
 
-- ⚠️ The runner installs a process-global panic hook (refcounted, but
-  still global). Concurrent property tests in the same process share
-  the install. If user code separately calls `panic::set_hook`,
-  ordering matters.
-- ⚠️ Regression replay writes to `target/`. If `CARGO_TARGET_DIR` and
-  `CARGO_MANIFEST_DIR` are both unset (e.g. running a release binary
-  outside cargo), persistence is silently skipped.
-- ⚠️ `#[derive(Arbitrary)]` does not parse arbitrary attribute paths
-  like `#[arbitrary(strategy = some::path::Thing::new())]` differently
-  from `#[arbitrary(strategy = "some::path::Thing::new()")]`; both
-  work, but the string form is parsed by Rust on macro output, so
-  quoting characters must follow Rust string escape rules.
-- ⚠️ `prop_recursive!`'s `inner` closure can technically build
-  strategies that grow exponentially with depth; `max_depth` only
-  bounds nesting, not breadth.
-- ⚠️ `panic = "abort"` Cargo profiles are incompatible: the runner
-  relies on `std::panic::catch_unwind`.
+検討の上で棄却した項目。主な理由は no-deps 方針か、別ライブラリの
+責務範囲外であること。
+
+- ❌ **フル正規表現ベース文字列生成** (proptest の `regex` 機能)。
+  数千行規模の `regex` 再実装か、クレート依存を必要とする。
+  Tier-S の文字列 strategy で 80% のケースをカバー。
+- ❌ **カバレッジ駆動ファジング** (libFuzzer / SanitizerCoverage)。
+  no-deps では到達できない LLVM 計装が必要。このワークフローには
+  `cargo-fuzz` を推奨。
+- ❌ **本物の async ランタイム**。組み込み `block_on` で純粋な
+  async ロジックには十分。ネットワーク / タイマー重量の async
+  コードは tokio を sync ラッパーの中で直接使うべき。
+- ❌ **スナップショットテスト** (insta スタイル)。別領域のテスト
+  関心事。`insta` に任せる。
+- ❌ **Mock / DI フレームワーク**。propcheck の責務外。
+- ❌ **時刻 / 乱数の注入**。ユーザコードや専用 faking ライブラリの
+  領分。
 
 ---
 
-## Process notes
+## ⚠️ 既知の制約
 
-- Plan files for future work should go in `.claude/plans/` (currently
-  contains the `README.md` and the historical analyses for this
-  session).
-- The "Tier S / A / B / C / D" framing used throughout the conversation
-  reflects an explicit agent-effort × value trade-off, not a hard
-  prioritisation. Items can move between tiers as priorities change.
+- ⚠️ ランナーはプロセスグローバルな panic hook をインストールする
+  (参照カウントはしているが、依然グローバル)。同一プロセス内で
+  並行に走るプロパティテストは install を共有する。ユーザコードが
+  別途 `panic::set_hook` を呼ぶと順序が問題になる。
+- ⚠️ Regression replay は `target/` に書き込む。`CARGO_TARGET_DIR`
+  と `CARGO_MANIFEST_DIR` がいずれも未設定だと (例: cargo の外で
+  リリースバイナリを実行する場合)、永続化は黙ってスキップされる。
+- ⚠️ `#[derive(Arbitrary)]` は属性パスとして
+  `#[arbitrary(strategy = some::path::Thing::new())]` のような
+  記述と、文字列形式
+  `#[arbitrary(strategy = "some::path::Thing::new()")]` を
+  区別して解釈しない。両方動くが、文字列形式は Rust 文字列
+  エスケープ規則に従う必要がある。
+- ⚠️ `prop_recursive!` の `inner` クロージャは技術的には深さに
+  対して指数的に肥大化する strategy を組める。`max_depth` は
+  ネスト深さのみを制約し、幅は制約しない。
+- ⚠️ `panic = "abort"` の Cargo プロファイルは非互換。ランナーは
+  `std::panic::catch_unwind` に依存している。
+
+---
+
+## プロセスメモ
+
+- 今後の作業のプランファイルは `.claude/plans/` に置く (現在は
+  本セッションの `README.md` と歴史的分析を格納)。
+- 会話で頻出した「Tier S / A / B / C / D」分類は、明示的な
+  エージェント工数 × 価値のトレードオフを表すもので、絶対的な
+  優先順位ではない。優先度の変化に応じて項目はティア間を移動できる。

@@ -1,23 +1,25 @@
-# Gap analysis #4 — `#[arbitrary]` field attrs + dependent / recursive gen
+# Gap 分析 #4 — `#[arbitrary]` フィールド属性 + 依存 / 再帰生成
 
-**Status: shipped in commit `45e9d00` (M6).**
+**Status: コミット `45e9d00` (M6) で着地。**
 
-## Motivation
+## 動機
 
-After M5, the library was at rough feature parity with `proptest`
-plus extras (state machine, async, regression replay). The fourth gap
-analysis identified five remaining items whose absence kept the
-`#[derive(Arbitrary)]` workflow from being agent-friendly in practice.
+M5 終了時点でライブラリは `proptest` とおおむね機能パリティに達し
+さらに追加機能 (状態機械、async、regression replay) も備えていた。
+4 回目の gap 分析では、`#[derive(Arbitrary)]` ワークフローを実運用
+でエージェントに優しいものにするのを阻んでいた、残り 5 項目を特定
+した。
 
-## Items implemented
+## 実装した項目
 
-### Tier S — the last big blocker
+### Tier S — 最後の大きな障壁
 
-1. **`#[arbitrary(strategy = ...)]` field attribute on
-   `#[derive(Arbitrary)]`.** This was the single biggest remaining
-   gap. Without it, derived `Arbitrary` impls generate "anything in
-   the type's domain" — including invalid inputs that the property
-   has to filter out via `prop_assume!`. With field attributes:
+1. **`#[derive(Arbitrary)]` のフィールド属性
+   `#[arbitrary(strategy = ...)]`。** これが唯一最大の残ギャップ
+   だった。これが無いと derive 生成の `Arbitrary` impl は「型の
+   ドメイン中の何でも」を生成する — つまり不正な入力も含み、
+   プロパティ側で `prop_assume!` でフィルタする羽目になる。フィールド
+   属性があると:
 
    ```rust
    #[derive(Arbitrary)]
@@ -29,71 +31,72 @@ analysis identified five remaining items whose absence kept the
    }
    ```
 
-   Supports both the string-literal form (proptest-style) and the
-   bare-expression form. Applies to named-field structs, tuple
-   structs, and to fields of enum variants (both shapes).
+   文字列リテラル形式 (proptest スタイル) と裸の式形式の両方を
+   サポート。named-field 構造体・tuple 構造体・enum バリアントの
+   フィールド (両形式) に適用可能。
 
-### Tier A — significant additions
+### Tier A — 重要な追加
 
-2. **`Strategy::flat_map`** for dependent generation. "First pick a
-   length, then a `Vec` of exactly that length" was previously
-   impossible without a custom Strategy impl.
-3. **`prop_recursive!` macro** for trees / ASTs / JSON-like values.
-   Internally calls a bounded-depth `recursive` builder that stacks
-   `inner` over `leaf` up to `max_depth` times.
-4. **`char_range(lo..hi)`** strategy (chars in a half-open range,
-   skipping surrogates).
-5. **`bytes(len_range)`** strategy sugar.
-6. **`f32_range` / `f64_range`** strategies with shrink toward 0.0
-   when zero lies in the range, otherwise toward `lo`.
-7. **`prop_assert_close!`** macro for approximate float equality.
+2. **`Strategy::flat_map`** — 依存生成のため。「先に長さを決め、
+   その後にちょうどその長さの `Vec`」が、それまでは独自 Strategy
+   実装無しには不可能だった。
+3. tree / AST / JSON ライク値向けの **`prop_recursive!` マクロ**。
+   内部では深さ制限付きの `recursive` ビルダを呼び、`inner` を
+   `leaf` の上に `max_depth` 回まで積み上げる。
+4. **`char_range(lo..hi)`** strategy (半開区間内の char。サロゲートは
+   スキップ)。
+5. **`bytes(len_range)`** strategy シュガー。
+6. **`f32_range` / `f64_range`** strategy。範囲に 0 を含めば 0.0、
+   それ以外は `lo` に向けて shrink。
+7. 浮動小数点の近似等価アサート用 **`prop_assert_close!`** マクロ。
 
-### Other small additions while we were there
+### ついでに入れた小ぶりな追加
 
-- `prop_filter!` macro (sugar over `StrategyExt::filter`).
-- `propcheck::{Strategy, StrategyExt}` re-exported at the crate root
-  so derive's generated paths resolve.
+- `prop_filter!` マクロ (`StrategyExt::filter` のシュガー)。
+- `propcheck::{Strategy, StrategyExt}` をクレートルートで
+  再エクスポート — derive の生成パスが解決するように。
 
-## Decisions
+## 設計判断
 
-- **Field attribute parser.** Hand-rolled, no `syn`. Supports both
-  `strategy = "expr"` (string literal — proptest-style) and
-  `strategy = expr` (bare tokens). The string form is stripped of
-  quotes and parsed by Rust at macro output time.
-- **Codegen split.** Per-field generation picks between
-  `Arbitrary::arbitrary` (default) and
+- **フィールド属性パーサ。** 手書き、`syn` 不使用。`strategy = "expr"`
+  (文字列リテラル — proptest スタイル) と `strategy = expr`
+  (裸トークン) の両方をサポート。文字列形式はクォートを剥がした上で
+  マクロ出力時に Rust パーサに渡される。
+- **コード生成の分岐。** フィールドごとの生成は
+  `Arbitrary::arbitrary` (デフォルト) と
   `{ let __strat = (EXPR); Strategy::new_value(&__strat, ...) }`
-  (when an attribute is present). Shrink uses
-  `Strategy::shrink_value` correspondingly. This means shrinks honor
-  the strategy's lower bound — verified by a planted-failure test
-  (`int_range(10..1000)` shrinks to **51**, not 0).
-- **`Fields::Named` / `Fields::Unnamed` representation.** Both now
-  hold `Vec<FieldInfo>` (name, ty, optional strategy) instead of the
-  earlier `Vec<(String, String)>`, allowing tuple-field attrs to
-  work uniformly.
-- **`prop_recursive!` typing.** The `inner` closure may return any
-  `Strategy<Value = T>`, not just `BoxedStrategy<T>`, so
-  `prop_oneof![...]` composes cleanly without explicit `.boxed()`.
-- **`proc_macro_derive` attributes(...)**. The derive macro now
-  declares `attributes(arbitrary)` so rustc accepts `#[arbitrary(...)]`
-  syntactically.
-- **`unsafe_code = forbid` preserved.** The new code paths (FlatMap,
-  recursive, CharRange, FloatRange) all stay safe-only.
+  (属性付き) を使い分け。shrink もこれに合わせ `Strategy::shrink_value`
+  を使う。これにより shrink が strategy の下限を尊重する — 仕込み
+  失敗テストで `int_range(10..1000)` が 0 ではなく **51** に縮む
+  ことを確認済み。
+- **`Fields::Named` / `Fields::Unnamed` 表現。** 双方とも従来の
+  `Vec<(String, String)>` ではなく `Vec<FieldInfo>` (name, ty,
+  optional strategy) を保持するよう統一。tuple フィールドの属性も
+  同じ仕組みで動くようになる。
+- **`prop_recursive!` の型付け。** `inner` クロージャは
+  `BoxedStrategy<T>` に限らず任意の `Strategy<Value = T>` を
+  返せる。これにより `prop_oneof![...]` を明示的な `.boxed()` 無し
+  でクリーンに組める。
+- **`proc_macro_derive` の `attributes(...)`**。derive マクロは
+  `attributes(arbitrary)` を宣言し、`#[arbitrary(...)]` 構文を rustc
+  が受理するように。
+- **`unsafe_code = forbid` を維持。** 新規コードパス (FlatMap,
+  recursive, CharRange, FloatRange) はすべて safe-only。
 
-## Skipped (deferred or rejected)
+## 棄却 (先送り or 却下)
 
-- Pre-canned domain strategies (`email_like`, `url_like`, etc.) —
-  vague specs, low value, ~200 LOC.
-- `prop_assert_panic!` / `prop_assert_no_panic!` — small impact.
-- `Strategy::sample()` debug helper — deferred to the backlog.
-- Coverage-guided fuzzing, regex strings, async runtime, snapshot
-  testing — same rejections as previous milestones.
+- ドメイン pre-canned strategy (`email_like`, `url_like` 等) — 仕様
+  曖昧、価値低、約 200 行。
+- `prop_assert_panic!` / `prop_assert_no_panic!` — 影響小。
+- `Strategy::sample()` デバッグヘルパー — バックログ送り。
+- カバレッジ駆動ファジング、regex 文字列、async ランタイム、スナップ
+  ショットテスト — 前マイルストーンと同じ理由で却下。
 
-## Verification
+## 検証
 
-153 unit + integration tests pass; clippy clean. The `derive_demo`
-example exercises every new feature in a single 80-line file. The
-planted-failure case shrinks a `User { age: 77, name: "e4aXBPirBVfg8",
-favorite_numbers: [35, 49, 34] }` down to `User { age: 51, name: "0",
-favorite_numbers: [] }`, demonstrating that field-attribute strategies
-drive both generation AND shrinking.
+ユニット + 統合テスト 153 件 pass、clippy clean。`derive_demo`
+example が新機能すべてを 1 ファイル 80 行で行使。仕込み失敗ケース
+では `User { age: 77, name: "e4aXBPirBVfg8", favorite_numbers:
+[35, 49, 34] }` が `User { age: 51, name: "0", favorite_numbers:
+[] }` まで縮む — フィールド属性 strategy が生成 **と** shrink の
+両方を駆動していることを示す。

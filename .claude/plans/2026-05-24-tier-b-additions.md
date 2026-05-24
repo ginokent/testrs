@@ -1,70 +1,71 @@
-# Gap analysis #2 — Tier B+ additions
+# Gap 分析 #2 — Tier B+ 追加
 
-**Status: shipped in commit `59724cd` (M4).**
+**Status: コミット `59724cd` (M4) で着地。**
 
-## Motivation
+## 動機
 
-After M1–M3, the workspace had:
+M1〜M3 終了時点でワークスペースには以下が揃っていた:
 
-- Three crates (`-core`, `-derive`, `propcheck`).
-- `#[derive(Arbitrary)]` for structs, `#[propcheck]` attribute macro.
-- `prop_assert*!` family, `prop_assume!`.
-- Basic strategy combinators.
+- 3 クレート (`-core`, `-derive`, `propcheck`)。
+- `#[derive(Arbitrary)]` (struct 対応)、`#[propcheck]` 属性マクロ。
+- `prop_assert*!` ファミリ、`prop_assume!`。
+- 基本的な strategy コンビネータ。
 
-The second gap analysis asked: what does an agent still hit when
-writing real-world property tests?
+2 回目の gap 分析の問い: 実プロジェクトでプロパティテストを書く
+エージェントが、なお詰まる箇所はどこか?
 
-## Gaps identified
+## 特定したギャップ
 
-### Tier B — must add
+### Tier B — 必須追加
 
-1. `classify!` for per-case distribution diagnostics.
-2. `IntoPropResult` so properties can return `Result<(), E>` and use
-   `?` directly.
-3. `#[propcheck(cases = N, seed = N, …)]` attribute arguments.
-4. Regression auto-replay: save failing seeds, replay first next run.
-5. Thread-safe panic-hook silencer.
-6. More std `Arbitrary` impls: `Rc`, `Arc`, `Cell`, `RefCell`,
-   `PathBuf`, `OsString`, `Ipv*`, `SocketAddr*`, `NonZero*`.
+1. ケースごとの分布診断用 `classify!`。
+2. プロパティが `Result<(), E>` を返せて `?` を直接使えるための
+   `IntoPropResult`。
+3. `#[propcheck(cases = N, seed = N, …)]` 属性引数。
+4. 失敗 seed の自動再現: 保存して次ラン冒頭で再生。
+5. thread-safe な panic-hook silencer。
+6. 追加 std `Arbitrary` 実装: `Rc`, `Arc`, `Cell`, `RefCell`,
+   `PathBuf`, `OsString`, `Ipv*`, `SocketAddr*`, `NonZero*`。
 
-### Tier C — pulled in opportunistically
+### Tier C — ついでに含めたもの
 
-7. Fuzz dictionary (`FuzzConfig::dictionary`).
-8. Crash deduplication + continue past first crash.
-9. Corpus / crash persistence to disk.
+7. Fuzz dictionary (`FuzzConfig::dictionary`)。
+8. Crash 重複排除 + 最初の crash 後も継続。
+9. コーパス / crash のディスク永続化。
 
-### Tier D — skipped
+### Tier D — 棄却
 
-- CLI subcommand, JUnit XML, full regex strings, snapshot testing.
+- CLI サブコマンド、JUnit XML、フル regex 文字列、スナップショット
+  テスト。
 
-## Implementation order
+## 実装順
 
-1. Lightweight additions first: `Outcome` field expansion, accessor
-   helpers, panic-hook RAII.
-2. `IntoPropResult` (changes runner signature but additive via blanket
-   `impl IntoPropResult for bool`).
-3. `classify!` wired through `run_loop` (reset before each case,
-   harvest after).
-4. Regression replay: file IO under `target/propcheck-regressions/`
-   with seed sanitisation and a bounded retention policy.
-5. Attribute-arg parsing in `propcheck-derive` (key/value with integer
-   literal values).
-6. Fuzz upgrades: dictionary mutation, `dedup_by_message`,
-   `continue_after_crash`, on-disk corpus + crash dirs.
+1. 軽量な追加から: `Outcome` フィールド拡張、アクセサヘルパー、
+   panic-hook RAII。
+2. `IntoPropResult` (ランナー署名は変えるが、blanket
+   `impl IntoPropResult for bool` で互換性を保ったまま追加可能)。
+3. `classify!` を `run_loop` 経由で配線 (各ケース前にリセット、
+   後に収穫)。
+4. Regression replay: `target/propcheck-regressions/` 下のファイル
+   IO、seed の sanitization + 保管数上限。
+5. `propcheck-derive` 側の属性引数パース (整数リテラル値の key/value)。
+6. Fuzz アップグレード: dictionary mutation, `dedup_by_message`,
+   `continue_after_crash`、on-disk corpus + crash dirs。
 
-## Decisions
+## 設計判断
 
-- **Discard vs skip.** Two separate counters and abort thresholds —
-  `prop_assume!` (input precondition not met) goes through
-  `PropDiscard`; `prop_skip!` (environment not ready) is added later
-  in M5 via `PropSkip` with a separate `max_skips` budget.
-- **Regression file location.** `target/` rather than `$HOME` so it
-  rides along with the build directory and is gitignored by default.
-- **Panic-hook refcounting.** Atomic `usize` counter + `Mutex<Option<…>>`
-  to hold the previous hook. Concurrent installs share one.
+- **Discard と skip。** 別々のカウンタと abort 閾値を持つ —
+  `prop_assume!` (入力の前提条件未充足) は `PropDiscard` 経由、
+  `prop_skip!` (環境が未整備) は M5 で `PropSkip` 経由・別の
+  `max_skips` 予算として追加。
+- **Regression ファイル配置。** `$HOME` ではなく `target/` 配下。
+  ビルドディレクトリと一緒に動き、デフォルトで gitignore 対象。
+- **Panic-hook 参照カウント。** atomic `usize` カウンタ +
+  `Mutex<Option<…>>` で旧 hook を保持。並行する install は単一を
+  共有。
 
-## Verification
+## 検証
 
-86 unit + integration tests pass; clippy clean. End-to-end regression
-replay test (`tests/regression_replay.rs`) writes to a temp directory
-and verifies the failure is reproduced on the second invocation.
+ユニット + 統合テスト 86 件 pass、clippy clean。E2E の regression
+replay テスト (`tests/regression_replay.rs`) は temp ディレクトリへ
+書き込み、2 回目の起動で失敗が再現することを検証。
