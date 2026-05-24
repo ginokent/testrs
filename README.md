@@ -4,6 +4,10 @@ Property-based testing and fuzzing for Rust, **with zero external
 dependencies** — only the standard library and the compiler-provided
 `proc_macro` crate.
 
+See [`BACKLOG.md`](BACKLOG.md) for the current state, planned items,
+and explicit non-goals. Major design decisions and gap analyses live
+under [`.claude/plans/`](.claude/plans/).
+
 The workspace is split into four crates:
 
 | Crate              | Purpose                                                              |
