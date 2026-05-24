@@ -1,4 +1,4 @@
-//! enumおよび`where`句つきの構造体に対する`#[derive(Arbitrary)]`のテストです。
+//! enum および`where`句つきの構造体に対する`#[derive(Arbitrary)]`のテストです。
 
 use propcheck::{forall_with, run, Arbitrary, Config, XorShift64};
 
@@ -73,8 +73,8 @@ fn enum_with_fields_arbitrary_works() {
 
 #[test]
 fn enum_shrinks_to_simplest_variant_when_property_universally_fails() {
-    // 常に偽となるプロパティ。すべてのバリアントが失敗するため、shrinkerは
-    // unit以外のバリアントを最もシンプルなもの（Empty）に潰し、それを受け入れる
+    // 常に偽となるプロパティ。すべての variant が失敗するため、shrinker は
+    // unit 以外の variant を最もシンプルなもの（Empty）に潰し、それを受け入れる
     // ことができます。
     let outcome = forall_with(no_replay_cfg(3), |_: &WithFields| false);
     assert!(outcome.is_failed());
@@ -83,8 +83,8 @@ fn enum_shrinks_to_simplest_variant_when_property_universally_fails() {
 
 #[test]
 fn enum_shrinks_within_variant_when_collapse_doesnt_help() {
-    // プロパティはPairバリアントの場合*のみ*失敗します。Emptyへの潰しは
-    // プロパティを成功させてしまうため拒否され、shrinkerはPair内に留まり、
+    // プロパティは Pairvariant の場合*のみ*失敗します。Empty への潰しは
+    // プロパティを成功させてしまうため拒否され、shrinker は Pair 内に留まり、
     // フィールドをデフォルト値に向けて縮小します。
     let outcome = forall_with(no_replay_cfg(3), |v: &WithFields| {
         !matches!(v, WithFields::Pair(_, _))
@@ -98,12 +98,12 @@ fn enum_shrinks_within_variant_when_collapse_doesnt_help() {
 
 #[test]
 fn enum_shrinks_fields_within_variant_when_no_unit_collapse_applies() {
-    // プロパティ: 任意のWithFields::Pairは最初のu8が200以下である。
-    // 最もシンプルなバリアント（Empty）ではmatches!()のガードによってスキップされ
-    // プロパティが成功するため、shrinkはPair(201, "")に収束するはずです。
-    // したがってshrinkerはPair内に留まり、フィールドを縮小します。
+    // プロパティ: 任意の WithFields::Pair は最初の u8が200以下である。
+    // 最もシンプルな variant（Empty）では matches!()のガードによってスキップされ
+    // プロパティが成功するため、shrink は Pair(201, "")に収束するはずです。
+    // したがって shrinker は Pair 内に留まり、フィールドを縮小します。
     //
-    // このテストは、Pair上で*のみ*発火しフィールドの不変条件をチェックする
+    // このテストは、Pair 上で*のみ*発火しフィールドの不変条件をチェックする
     // プロパティを用いて検証します。
     let outcome = forall_with(no_replay_cfg(4), |v: &WithFields| match v {
         WithFields::Pair(n, _) => *n <= 200,
@@ -144,7 +144,7 @@ fn generic_enum_drives_run() {
     });
 }
 
-// --- where句 ----------------------------------------------------
+// --- where 句 ----------------------------------------------------
 
 #[derive(Arbitrary, Debug, Clone)]
 struct WhereOwned<T>
@@ -180,7 +180,7 @@ fn enum_with_where_clause_works() {
     }
 }
 
-// --- 属性マクロ + derive enumの組み合わせ -----------------------
+// --- 属性マクロ + derive enum の組み合わせ -----------------------
 
 #[propcheck::propcheck]
 fn enum_attribute_round_trip(e: SimpleEnum) {

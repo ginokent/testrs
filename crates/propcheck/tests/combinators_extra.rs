@@ -1,9 +1,9 @@
-//! 後から追加されたTier-S/Aコンビネータのテスト: flat_map、char_range、
-//! bytes、floatのrange、prop_assert_close!、prop_recursive!です。
+//! 後から追加された Tier-S/A combinator のテスト: flat_map、char_range、
+//! bytes、float の range、prop_assert_close!、prop_recursive! です。
 //!
 //! `char_range`の`Range<char>`シグネチャに合わせるため、意図的に
 //! `'a'..'z'`（exclusive）を使用しています。このテストにおける
-//! clippyの「almost-complete range」lintは誤検知です。
+//! clippy の「almost-complete range」lint は誤検知です。
 #![allow(clippy::almost_complete_range)]
 
 use propcheck::strategy::{
@@ -27,7 +27,7 @@ fn cfg(seed: u64) -> Config {
 
 #[test]
 fn flat_map_generates_dependent_length() {
-    // まず長さ1..=5を選び、その長さちょうどのVecを生成します。
+    // まず長さ1..=5を選び、その長さちょうどの Vec を生成します。
     let s = int_range(1usize..6).flat_map(|len| vec_of(any::<u8>(), len..len + 1));
     let mut rng = propcheck::XorShift64::seed_from_u64(7);
     for _ in 0..100 {
@@ -109,7 +109,7 @@ fn f64_range_shrinks_toward_lo_when_zero_not_in_range() {
 #[test]
 fn prop_assert_close_passes_within_epsilon() {
     let outcome = propcheck::forall_with(cfg(23), |&n: &u8| -> bool {
-        // 自明に近い値: 同一の値はどんなepsilonに対しても範囲内です。
+        // 自明に近い値: 同一の値はどんな epsilon に対しても範囲内です。
         let x = n as f64;
         prop_assert_close!(x, x + 1e-12, epsilon = 1e-9);
         true

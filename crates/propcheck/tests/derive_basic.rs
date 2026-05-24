@@ -61,7 +61,7 @@ fn derive_generic_struct_works_with_arbitrary_inner() {
 #[test]
 fn derive_works_inside_property_test() {
     run("named struct round-trip", |s: &NamedStruct| {
-        // 自明に真のプロパティ。deriveがランナーで利用できる値を生成することを
+        // 自明に真のプロパティ。derive がランナーで利用できる値を生成することを
         // 確認するだけのテストです。
         s.a == s.a && s.b == s.b && s.c == s.c
     });
@@ -81,12 +81,12 @@ fn derive_failure_shrinks_through_fields() {
         regression_replay: false,
         shrink_mode: propcheck::ShrinkMode::Greedy,
     };
-    // プロパティ: NamedStruct.aは決して200を超えない。
+    // プロパティ: NamedStruct.a は決して200を超えない。
     let outcome = forall_with(cfg, |s: &NamedStruct| s.a <= 200);
     match outcome {
         Outcome::Failed { shrunk, .. } => {
             assert!(shrunk.a > 200, "expected shrunk.a > 200, got {}", shrunk.a);
-            // shrinkingは無関係なフィールドをデフォルト値に向けて縮小するはずです。
+            // shrinking は無関係なフィールドをデフォルト値に向けて縮小するはずです。
             assert!(
                 shrunk.b.is_empty() || shrunk.b.len() <= 5,
                 "expected b to shrink, got {:?}",
@@ -121,7 +121,7 @@ fn attribute_macro_two_args(a: i32, b: i32) {
 
 #[propcheck::propcheck]
 fn attribute_macro_with_derive(s: NamedStruct) {
-    // プロパティが自明になるケースをスキップするためにprop_assume!を使います。
+    // プロパティが自明になるケースをスキップするために prop_assume!を使います。
     propcheck::prop_assume!(!s.c.is_empty());
     propcheck::prop_assert_eq!(s.c.len(), s.c.iter().count());
 }
@@ -130,18 +130,18 @@ fn attribute_macro_with_derive(s: NamedStruct) {
 fn attribute_macro_with_args(n: u8) {
     // ランナーはちょうど50ケースを実行するはずです（ここから直接観測することは
     // できませんが、このオーバーライドでテストがコンパイル・成功することで、
-    // パーサがそれを受け付けることが確認できます）。
+    // parser がそれを受け付けることが確認できます）。
     propcheck::prop_assert_eq!(n.wrapping_add(0), n);
 }
 
 #[propcheck::propcheck(seed = 12345)]
 fn attribute_macro_with_seed(n: u32) {
-    // 固定seed -> 決定的な実行。ここでseedを直接観測するのは難しいですが、
-    // この関数はseedオーバーライドつきでコンパイル・成功する必要があります。
+    // 固定 seed -> 決定的な実行。ここで seed を直接観測するのは難しいですが、
+    // この関数は seed オーバーライドつきでコンパイル・成功する必要があります。
     propcheck::prop_assert!(n == n);
 }
 
-// `?`演算子を使ったResult戻り値型。
+// `?`演算子を使った Result 戻り値型。
 #[propcheck::propcheck]
 fn attribute_macro_with_result(s: String) -> Result<(), std::num::ParseIntError> {
     propcheck::prop_assume!(!s.is_empty());

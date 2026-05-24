@@ -236,7 +236,7 @@ impl<T: Arbitrary> Arbitrary for RefCell<T> {
 impl Arbitrary for PathBuf {
     fn arbitrary<R: Rng + ?Sized>(rng: &mut R, size: usize) -> Self {
         // パス風の文字列に偏らせます。時折 '/' や '\\' を挿入することで、
-        // ジェネレータが複数のコンポーネントを持つパスを生成するようにします。
+        // generator が複数のコンポーネントを持つパスを生成するようにします。
         let s: String = Arbitrary::arbitrary(rng, size);
         PathBuf::from(s)
     }
@@ -378,7 +378,7 @@ macro_rules! impl_arbitrary_nonzero {
     ($($nz:ty => $base:ty),* $(,)?) => {$(
         impl Arbitrary for $nz {
             fn arbitrary<R: Rng + ?Sized>(rng: &mut R, size: usize) -> Self {
-                // 最大で約30回リトライします。ビット幅を制限したジェネレータでは
+                // 最大で約30回リトライします。ビット幅を制限した generator では
                 // ゼロを引く確率は約 1/2^bits なので、このループが2回以上回ることは
                 // ほとんどありません。
                 for _ in 0..32 {
@@ -542,7 +542,7 @@ mod tests {
     fn nonzero_shrinks_skip_zero() {
         let n = NonZeroU32::new(100).unwrap();
         let v: Vec<NonZeroU32> = n.shrink().collect();
-        // shrink結果が 0 になることはありません（NonZeroU32::new でフィルタされます）。
+        // shrink 結果が 0 になることはありません（NonZeroU32::new でフィルタされます）。
         assert!(v.iter().all(|x| x.get() != 0));
         // 少なくとも1つの shrink 候補が存在するはずです。
         assert!(!v.is_empty());

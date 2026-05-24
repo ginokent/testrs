@@ -1,27 +1,27 @@
-//! アサーションマクロと、それらが発行する構造化された panic ペイロードです。
+//! assertion マクロと、それらが発行する構造化された panic payload です。
 //!
-//! ランナーはこれらの特定の型の `panic_any` ペイロードを捕捉し、デフォルトの
+//! ランナーはこれらの特定の型の `panic_any` payload を捕捉し、デフォルトの
 //! "panicked: …" 文字列の代わりに、詳細な失敗メッセージ、discard、skip を
 //! 報告します。
 //!
 //! 3つのカテゴリが区別されます。
 //!
 //! - [`PropAssertFailure`] — プロパティの invariant が違反されました。これは
-//!   実際のバグです。アサーションメッセージと、周囲に `prop_with_context!`
+//!   実際のバグです。assertion メッセージと、周囲に `prop_with_context!`
 //!   スタックがあればそれを伴う失敗として報告されます。
 //! - [`PropDiscard`] — 入力が前提条件を満たしませんでした。discard として
 //!   報告されます。ランナーはこれらを `Config::max_discards` にカウントします。
-//!   なぜなら、過剰な場合はジェネレータが有用な入力を生成していないことを
+//!   なぜなら、過剰な場合は generator が有用な入力を生成していないことを
 //!   意味するからです。
 //! - [`PropSkip`] — 環境が準備できていない（環境変数がない、IO 失敗、機能が
 //!   有効化されていない）ためにテストを実行できませんでした。skip として
 //!   報告されます。`Config::max_skips` に別途カウントされ、不安定な環境を
-//!   ジェネレータの不良に偽装させません。
+//!   generator の不良に偽装させません。
 
 use std::cell::RefCell;
 
 /// `prop_assert!`、`prop_assert_eq!`、`prop_assert_ne!`、`prop_assert_matches!`
-/// が発行する panic ペイロード型です。ランナーがメッセージを表示するために
+/// が発行する panic payload 型です。ランナーがメッセージを表示するために
 /// 捕捉します。
 #[derive(Debug, Clone)]
 pub struct PropAssertFailure {
@@ -30,15 +30,15 @@ pub struct PropAssertFailure {
     pub message: String,
 }
 
-/// `prop_assume!` が発行する panic ペイロード型です。ランナーが現在の
+/// `prop_assume!` が発行する panic payload 型です。ランナーが現在の
 /// ケースを失敗させる代わりに discard するために捕捉します。
 #[derive(Debug, Clone, Copy)]
 pub struct PropDiscard;
 
-/// `prop_skip!` が発行する panic ペイロード型です。discard と似ていますが、
+/// `prop_skip!` が発行する panic payload 型です。discard と似ていますが、
 /// （入力ではなく）*環境* がテストの実行を妨げる場合に使用されます。discard
 /// とは別途カウントされるため、ランナーは壊れた環境とノイズの多い
-/// ジェネレータを区別できます。
+/// generator を区別できます。
 #[derive(Debug, Clone)]
 pub struct PropSkip {
     /// テストがスキップされた理由です。
@@ -76,7 +76,7 @@ pub fn __current_context() -> String {
 }
 
 /// `body` の実行中、コンテキストフレームをプッシュします。`body` 内で失敗した
-/// 任意のアサーションは、報告されるメッセージにフォーマットされたコンテキスト
+/// 任意の assertion は、報告されるメッセージにフォーマットされたコンテキスト
 /// 文字列を含めます。
 ///
 /// ```ignore
@@ -105,8 +105,8 @@ macro_rules! prop_with_context {
 
 // --- prop_assert! ファミリ --------------------------------------------
 
-/// プロパティ本体内で真偽条件が成立することをアサートします。失敗時には、
-/// ランナーが捕捉して報告する [`PropAssertFailure`] ペイロードで panic
+/// プロパティ本体内で真偽条件が成立することを assert します。失敗時には、
+/// ランナーが捕捉して報告する [`PropAssertFailure`] payload で panic
 /// します。
 ///
 /// ```ignore
@@ -142,7 +142,7 @@ macro_rules! prop_assert {
     };
 }
 
-/// 2つの値が等しいことをアサートします。失敗時には、`assert_eq!` と同様に
+/// 2つの値が等しいことを assert します。失敗時には、`assert_eq!` と同様に
 /// 両辺が失敗メッセージに含まれます。
 #[macro_export]
 macro_rules! prop_assert_eq {
@@ -166,7 +166,7 @@ macro_rules! prop_assert_eq {
     }};
 }
 
-/// 2つの値が等しくないことをアサートします。
+/// 2つの値が等しくないことを assert します。
 #[macro_export]
 macro_rules! prop_assert_ne {
     ($left:expr, $right:expr $(,)?) => {{
@@ -188,7 +188,7 @@ macro_rules! prop_assert_ne {
     }};
 }
 
-/// 2つの浮動小数点数値が互いに `epsilon` の範囲内であることをアサートします。
+/// 2つの浮動小数点数値が互いに `epsilon` の範囲内であることを assert します。
 /// 完全な等価性が不適切な場合（丸め誤差、超越関数など）に、`prop_assert_eq!`
 /// の代わりに使用してください。
 ///
@@ -223,7 +223,7 @@ macro_rules! prop_assert_close {
     }};
 }
 
-/// 値がパターンにマッチすることをアサートします。`std::matches!` と同様に
+/// 値がパターンにマッチすることを assert します。`std::matches!` と同様に
 /// オプションの `if` ガードをサポートします。
 ///
 /// ```ignore
@@ -272,7 +272,7 @@ macro_rules! prop_assert_matches {
 
 /// 条件が false の場合に現在のケースを discard します。ランナーは新しい
 /// 入力を生成して再試行します。連続して discard されるケースが多すぎる
-/// 場合、実行は「ノイズの多いジェネレータ」診断とともに中止されます。
+/// 場合、実行は「ノイズの多い generator」診断とともに中止されます。
 ///
 /// これは *入力* の前提条件（「リストがソートされている場合のみ実行する」）
 /// に使用してください。*環境* の前提条件（「$FOO が設定されている場合のみ

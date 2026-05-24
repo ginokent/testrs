@@ -14,18 +14,18 @@ M4 終了時点でライブラリは堅実な骨格を備えていた。3 回目
 ### Tier S — エージェントの最大ブロッカー
 
 1. **enum 向け `#[derive(Arbitrary)]`** (unit / tuple / named-field
-   バリアント、ジェネリクス対応)。これが無いと実際の Rust クレートの
+   variant、ジェネリクス対応)。これが無いと実際の Rust クレートの
    ~50% が derive 経由で扱えない。
 2. **構造化文字列 strategy** (`str::ascii_digits`,
    `ascii_alphanumeric`, `hex_string`, `ascii_letters_*`,
-   `ascii_printable`, `from_char_set`)。これが無いとパーサテストが
+   `ascii_printable`, `from_char_set`)。これが無いと parser テストが
    ランダム Unicode でケースを浪費する。
 3. **`prop_assert_matches!`** (オプションの `if` ガード付き)。
-   enum を返すパーサや状態機械のテストに必須。
+   enum を返す parser や状態機械のテストに必須。
 
 ### Tier A — 大きな quality-of-life
 
-4. 宣言的な複合ジェネレータのための **`prop_compose!`** (proptest
+4. 宣言的な複合 generator のための **`prop_compose!`** (proptest
    のシンタックス互換)。
 5. **タプル arity 5..=8** — 引数の多いテスト関数を動かせるように。
 6. **状態機械フレームワーク** — `StateMachine` trait + ランナー。
@@ -34,11 +34,11 @@ M4 終了時点でライブラリは堅実な骨格を備えていた。3 回目
 7. **Async サポート** — 組み込み `block_on` (Condvar parker、
    `std::pin::pin!` ベース、unsafe ゼロ)。`#[propcheck]` マクロは
    `async fn` を検出し、本体を `block_on` でラップする。
-8. **`PropSkip` ペイロード + `prop_skip!` マクロ**。discard とは別
-   集計のため、フレーキーな環境がノイジーなジェネレータを覆い隠さない。
-9. アサーションメッセージに付加される thread-local コンテキスト
+8. **`PropSkip` payload + `prop_skip!` マクロ**。discard とは別
+   集計のため、フレーキーな環境がノイジーな generator を覆い隠さない。
+9. assertion メッセージに付加される thread-local コンテキスト
    スタック付き **`prop_with_context!`**。
-10. **`Outcome` アクセサ** (`is_passed`, `failure_message`,
+10. **`Outcome` accessor** (`is_passed`, `failure_message`,
     `shrunk`, `seed` 他) — プログラム的な検査用。
 
 ### Tier B — 仕上げ
@@ -51,10 +51,10 @@ M4 終了時点でライブラリは堅実な骨格を備えていた。3 回目
 
 ## 設計判断
 
-- **simplest-variant への enum shrink collapse。** unit バリアントが
-  存在する場合のみ発火。それ以外はバリアント内に留まりフィールドを
+- **simplest-variant への enum shrink collapse。** unit variant が
+  存在する場合のみ発火。それ以外は variant 内に留まりフィールドを
   shrink。collapse がプロパティを成功させてしまう場合は採用しない
-  (失敗バリアントを掘り続ける方が望ましいため)。
+  (失敗 variant を掘り続ける方が望ましいため)。
 - **ランタイム依存ゼロでの async。** Mutex+Condvar parker による
   最小 `block_on` で純粋な async ロジックには十分。ネットワーク /
   タイマー重量のコードはどのみち tokio が必要で、ユーザ側で
@@ -66,7 +66,7 @@ M4 終了時点でライブラリは堅実な骨格を備えていた。3 回目
 ## 実装順
 
 1. 小規模で独立な項目を先に (タプル 5..=8、追加 std impl、
-   アクセサメソッド)。
+   accessor メソッド)。
 2. `IntoPropResult` と `prop_skip!` の配線。
 3. derive マクロ拡張: enum サポート、where 句、属性引数。
 4. 状態機械フレームワーク。
@@ -77,7 +77,7 @@ M4 終了時点でライブラリは堅実な骨格を備えていた。3 回目
 
 - CLI サブコマンド (スコープ外)。
 - JUnit XML (価値低、後付け容易)。
-- カバレッジ駆動ファジング (LLVM バインディング無しでは不可能)。
+- カバレッジ駆動 fuzzing (LLVM バインディング無しでは不可能)。
 
 ## 検証
 

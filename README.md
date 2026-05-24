@@ -1,6 +1,6 @@
 # propcheck
 
-Rust 向けのプロパティベーステスト + ファジングライブラリ。
+Rust 向けのプロパティベーステスト + fuzzing ライブラリ。
 **外部依存ゼロ** — std とコンパイラ提供の `proc_macro` クレートのみ。
 
 現在の状態・計画中の項目・明示的な非ゴールは
@@ -11,10 +11,10 @@ gap 分析は [`.claude/plans/`](.claude/plans/) 配下にあります。
 
 | クレート           | 目的                                                                  |
 |--------------------|-----------------------------------------------------------------------|
-| `propcheck-core`   | `Rng`, `XorShift64`, `Arbitrary` trait, `strategy::*` コンビネータ    |
+| `propcheck-core`   | `Rng`, `XorShift64`, `Arbitrary` trait, `strategy::*` combinator    |
 | `propcheck-derive` | `#[derive(Arbitrary)]` と `#[propcheck]` proc-macro                   |
-| `propcheck`        | テストランナー、アサーションマクロ、regression shrinking              |
-| `propcheck-fuzz`   | in-process ミューテーション・ファザー (`fuzz` + `fuzz_typed`)         |
+| `propcheck`        | テストランナー、assertion マクロ、regression shrinking              |
+| `propcheck-fuzz`   | in-process mutation・fuzzer (`fuzz` + `fuzz_typed`)         |
 
 通常は `propcheck` だけで足ります。`propcheck-core` と
 `propcheck-derive` の内容をすべて再エクスポートしています。
@@ -22,7 +22,7 @@ gap 分析は [`.claude/plans/`](.claude/plans/) 配下にあります。
 ```toml
 [dev-dependencies]
 propcheck = { path = "crates/propcheck" }
-propcheck-fuzz = { path = "crates/propcheck-fuzz" }   # オプション、ファジング用
+propcheck-fuzz = { path = "crates/propcheck-fuzz" }   # オプション、fuzzing 用
 ```
 
 ## クイックスタート
@@ -43,7 +43,7 @@ fn stress_test(v: Vec<u32>) {
 ```
 
 `cargo test` でプロパティをデフォルト 100 回実行します。失敗時は
-ランナーが入力を最小反例まで shrink し、アサーションの両辺を表示し、
+ランナーが入力を最小反例まで shrink し、assertion の両辺を表示し、
 再現用の `PROPCHECK_SEED` を出力します。同じ seed は
 `target/propcheck-regressions/<test>.txt` に追記され、次回ラン冒頭で
 自動再生されます。
@@ -62,26 +62,26 @@ fn stress_test(v: Vec<u32>) {
 | `prop_with_context!`                       | 失敗メッセージ内のスコープ付きコンテキスト文字列    |
 | `classify!`                                | ケースごとのラベル分布レポート                      |
 | `IntoPropResult` (bool/`()`/`Result`)      | プロパティ内で `?` 演算子 + `Result<(), E>` 戻り    |
-| `prop_oneof!` / `prop_compose!`            | Strategy コンビネータマクロ                         |
+| `prop_oneof!` / `prop_compose!`            | Strategy combinator マクロ                         |
 | `prop_recursive!` / `prop_filter!`         | 再帰木 / フィルタ付き strategy                      |
 | `Strategy::flat_map`                       | 依存生成                                            |
-| Strategy コンビネータ                      | `propcheck::strategy::*`                            |
-| 文字列ジェネレータ                         | `propcheck::strategy::str::*` (ascii, hex, …)       |
+| Strategy combinator                      | `propcheck::strategy::*`                            |
+| 文字列 generator                         | `propcheck::strategy::str::*` (ascii, hex, …)       |
 | `char_range` / `bytes` / `f64_range`       | `propcheck::strategy::{char_range, bytes, f32_range, f64_range}` |
 | 状態機械テスト                             | `propcheck::state_machine::run_state_machine`       |
 | Differential テスト                        | `propcheck::{differential, differential_with}`      |
 | Greedy / Exhaustive shrink                 | `Config::shrink_mode`                               |
 | Regression 自動再生                        | デフォルト ON。`Config::regression_replay` で切替   |
-| Outcome アクセサ                           | `.is_passed()`, `.failure_message()`, `.shrunk()`, … |
-| ミューテーション・バイトファザー           | `propcheck_fuzz::fuzz`                              |
-| 型付きファザー (`Arbitrary` 駆動)          | `propcheck_fuzz::fuzz_typed`                        |
+| Outcome accessor                           | `.is_passed()`, `.failure_message()`, `.shrunk()`, … |
+| mutation・バイト fuzzer           | `propcheck_fuzz::fuzz`                              |
+| 型付き fuzzer (`Arbitrary` 駆動)          | `propcheck_fuzz::fuzz_typed`                        |
 | Fuzz dictionary                            | `FuzzConfig::dictionary`                            |
 | Crash 後継続 + 重複排除                    | `FuzzConfig::{continue_after_crash, dedup_by_message}` |
-| コーパス / crash 永続化                    | `FuzzConfig::{corpus_dir, crash_dir}`               |
+| corpus / crash 永続化                    | `FuzzConfig::{corpus_dir, crash_dir}`               |
 
 ## パターン集
 
-### 1. シリアライザのラウンドトリップ
+### 1. serializer のラウンドトリップ
 
 ```rust
 use propcheck::{propcheck, prop_assert_eq, Arbitrary};
@@ -99,7 +99,7 @@ fn from_bytes(b: &[u8]) -> Result<Config, Error> { /* ... */ }
 #[propcheck]
 fn config_round_trips(c: Config) {
     let bytes = to_bytes(&c);
-    let back = from_bytes(&bytes).expect("自前のシリアライザはパースできるはず");
+    let back = from_bytes(&bytes).expect("自前の serializer はパースできるはず");
     prop_assert_eq!(c, back);
 }
 ```
@@ -165,7 +165,7 @@ fn percentage_stays_in_range() {
 }
 ```
 
-`propcheck::strategy` で使える主なコンビネータ:
+`propcheck::strategy` で使える主な combinator:
 
 - `any::<T>()` — `T::Arbitrary` に委譲
 - `just(v)` — 定数
@@ -205,10 +205,10 @@ fn json_query_never_panics() {
 ```
 
 `Arbitrary` を実装した任意の型を `fuzz_typed` で駆動できます。
-ミューテータはバイト seed 上で動くため、手書きの `&[u8] → T`
-デコーダ無しで多様な入力を探索します。
+mutator はバイト seed 上で動くため、手書きの `&[u8] → T`
+decoder 無しで多様な入力を探索します。
 
-### 7. `classify!` でジェネレータの分布を診断
+### 7. `classify!` で generator の分布を診断
 
 ```rust
 use propcheck::{run, classify};
@@ -254,7 +254,7 @@ for f in &report.failures {
 }
 ```
 
-`dictionary` は素朴なミューテータでは到達に永遠を要する複数バイトの
+`dictionary` は素朴な mutator では到達に永遠を要する複数バイトの
 ゲートを越えさせます。`continue_after_crash` + `dedup_by_message` で
 ユニークな panic をすべて収集。`crash_dir` には `.bin` 再現ファイルと
 対応する `.txt` メタデータが保存されます。
@@ -457,8 +457,8 @@ run_with(
   サポートします。enum および独自の `where` 句を持つ struct も
   扱えますが、複雑なケースでは手書きで `Arbitrary` を実装する方が
   分かりやすい場合があります。
-- ファザーにはカバレッジフィードバックがありません。ランダム / 変異
-  入力で panic を捕まえる「スモークファザー」であり、libFuzzer や
+- fuzzer にはカバレッジフィードバックがありません。ランダム / 変異
+  入力で panic を捕まえる「スモーク fuzzer」であり、libFuzzer や
   cargo-fuzz が使える場面ではそれらの代替にはなりません。
 - ランナーはプロセスグローバルな panic hook をインストールします
   (安全のため参照カウント済み)。別スレッドで動くプロパティテストは

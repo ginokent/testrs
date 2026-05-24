@@ -1,11 +1,11 @@
-//! プロパティベーステストとファジング向けのコア抽象です。
+//! プロパティベーステストと fuzzing 向けのコア抽象です。
 //!
 //! 外部依存はありません。このクレートは4つの要素を公開します。
 //!
-//! - [`Rng`] — 最小限かつオブジェクトセーフな擬似乱数生成器トレイトです。
-//! - [`XorShift64`] — [`Rng`] を実装する高速でシード可能な PRNG です。
-//! - [`Arbitrary`] — 値をランダム生成し shrink できる型のためのトレイトです。
-//! - [`strategy`] — 組み合わせ可能なジェネレータコンビネータ群です (`int_range`、`vec_of`、
+//! - [`Rng`] — 最小限かつオブジェクトセーフな擬似乱数生成器 trait です。
+//! - [`XorShift64`] — [`Rng`] を実装する高速で seed 可能な PRNG です。
+//! - [`Arbitrary`] — 値をランダム生成し shrink できる型のための trait です。
+//! - [`strategy`] — 組み合わせ可能な generator combinator 群です (`int_range`、`vec_of`、
 //!   `one_of`、`.map`、`.filter` など)。
 
 pub mod arbitrary;

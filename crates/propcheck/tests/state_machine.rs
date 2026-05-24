@@ -10,7 +10,7 @@ enum VecOp {
     Clear,
 }
 
-/// 参照モデル: テスト対象システム（実際のVec）と独立した参照（こちらもVecですが
+/// 参照モデル: テスト対象システム（実際の Vec）と独立した参照（こちらも Vec ですが
 /// 別途管理されており、どちらかのバグがあれば不一致として顕在化します）の組合せ。
 struct VecAgainstReference;
 
@@ -64,11 +64,11 @@ fn no_replay_cfg(seed: u64) -> Config {
 
 #[test]
 fn correct_implementation_passes_state_machine_test() {
-    // std::Vecは、自明な参照（こちらもstd::Vec）と一致します。
+    // std::Vec は、自明な参照（こちらも std::Vec）と一致します。
     run_state_machine::<VecAgainstReference>("vec-against-itself", no_replay_cfg(1));
 }
 
-// --- ランナーがレポートしshrinkすることを検証するための、意図的にバグのあるSUT ---
+// --- ランナーがレポートし shrink することを検証するための、意図的にバグのある SUT ---
 
 #[derive(Arbitrary, Debug, Clone)]
 enum CounterOp {
@@ -117,8 +117,8 @@ impl StateMachine for BuggyCounter {
 #[test]
 #[should_panic(expected = "FAILED")]
 fn buggy_counter_is_caught_and_shrunk() {
-    // ランナーは失敗メッセージとともにpanicするはずです。このテストは
-    // #[should_panic]によって成功します。shrinkされたシーケンスは、
+    // ランナーは失敗メッセージとともに panic するはずです。このテストは
+    // #[should_panic]によって成功します。shrink されたシーケンスは、
     // 失敗する最小の操作である[Decrement]だけになるはずです。
     run_state_machine::<BuggyCounter>("buggy-counter", no_replay_cfg(2));
 }
