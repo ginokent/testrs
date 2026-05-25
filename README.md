@@ -3,9 +3,9 @@
 Rust 向けのプロパティベーステスト + fuzzing ライブラリ。
 **外部依存ゼロ** — std とコンパイラ提供の `proc_macro` クレートのみ。
 
-現在の状態・計画中の項目・明示的な非ゴールは
-[`BACKLOG.md`](BACKLOG.md) を参照してください。主要な設計判断と
-gap 分析は [`.claude/plans/`](.claude/plans/) 配下にあります。
+大方針は [`SPEC.md`](SPEC.md) を参照してください。計画中の項目・
+明示的な非ゴール・完了履歴は [`issues/`](issues/) 配下で管理します。
+主要な設計判断と gap 分析は [`.claude/plans/`](.claude/plans/) 配下にあります。
 
 ワークスペースは 4 クレートに分かれています:
 
@@ -482,6 +482,18 @@ run_with(
   この install を共有するため、panic hook を別途取得 / 設定する
   コードと並行すると競合し得ます。
 - `panic = "abort"` プロファイルは非対応です。
+- Regression replay は `target/` 配下に書き込みます。書き込み先は
+  `CARGO_TARGET_DIR` を優先し、未設定なら `CARGO_MANIFEST_DIR` を
+  起点とします。両方とも未設定の場合 (例: cargo の外でリリース
+  バイナリを直接実行する場合) は永続化が黙ってスキップされます。
+- `#[derive(Arbitrary)]` のフィールド属性 `#[arbitrary(strategy = ...)]`
+  は、裸の式形式 (`#[arbitrary(strategy = some::path::Thing::new())]`) と
+  文字列形式 (`#[arbitrary(strategy = "some::path::Thing::new()")]`) を
+  区別せず解釈します。両方動作しますが、文字列形式は Rust の文字列
+  エスケープ規則に従う必要があります。
+- `prop_recursive! { leaf = …, inner = …, max_depth = N }` の `inner`
+  closure は技術的には深さに対して指数的に肥大化する strategy を組めます。
+  `max_depth` はネスト深さのみを制約し、幅は制約しません。
 
 ## テストスイートの実行
 

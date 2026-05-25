@@ -1,0 +1,15 @@
+# Strategy trait と StrategyExt 拡張 trait を追加する
+
+- Priority: -
+- Created: -
+- Completed: 2026-05-25 20:47 JST (BACKLOG.md から移行)
+- Model: -
+- Branch: - (該当コミット: `27c663d`)
+
+## 完了内容
+
+`Strategy` trait + `StrategyExt` 拡張 trait。
+
+## 関連マイルストーン
+
+M2 — Strategy combinator と追加 impl (コミット `27c663d`)
