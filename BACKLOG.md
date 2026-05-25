@@ -2,13 +2,22 @@
 
 `propcheck` ワークスペースの状況 snapshot。更新日: 2026-05-24。
 
-- リポジトリ状態: すべての変更を `claude/property-based-testing-lib-V4Q5s`
-  ブランチにコミット・プッシュ済み。
-- テストスイート: **ユニット + 統合テスト 153 件 pass**。doc テストも含む。
+- リポジトリ状態: M1〜M6 の機能は `main` にマージ済み。本ファイルの
+  整備は `claude/sub-agent-backlog-update-Sq350` ブランチで行っている。
+- テストスイート: **ユニット + 統合テスト 146 件 + doc テスト 7 件 =
+  合計 153 件 pass** (doc テスト 10 件は意図的に `ignore` 指定)。
 - Lint: `cargo clippy --workspace --all-targets -- -D warnings` clean。
+  `cargo doc --workspace --no-deps` も `RUSTDOCFLAGS=-D warnings` で clean、
+  CI に `doc` ジョブと MSRV (1.82) `cargo build` ジョブを追加済み。
+- Toolchain: `rust-toolchain.toml` で **stable 1.95** に pin (rustfmt/clippy
+  同梱)。ローカルと CI の fmt/clippy/test/doc ジョブはすべてこの版で動く。
+  MSRV ジョブのみ `RUSTUP_TOOLCHAIN=1.82` で 1.82 にオーバーライド。
 - 依存方針: std とコンパイラ組み込みの `proc_macro` クレートのみ。
 - ワークスペース全体で `unsafe_code = "forbid"` (最小 `block_on` executor
   も `std::pin::pin!` を使い unsafe 回避)。
+- 配布方針: **crates.io には公開しない**。git dependency として参照
+  される運用を前提とする。依存先が git のみで配布されるクレートで
+  あっても問題視しない (本クレート自体の no-deps 方針は維持)。
 
 ## 凡例
 
@@ -115,6 +124,9 @@
 - ✅ `Strategy::flat_map` / `FlatMap`、依存生成のための。
 - ✅ `prop_recursive! { leaf = …, inner = …, max_depth = N }` マクロ。
   tree / AST / JSON-like 値の生成に使用。
+- ✅ `prop_oneof![ … ]` マクロ。一様 (`prop_oneof![a, b, c]`) と
+  重み付き (`prop_oneof![1 => a, 4 => b]`) の両形式で、異なる具象型を
+  持つサブ strategy を自動 box 化してまとめる。
 - ✅ `char_range(lo..hi)` Strategy。
 - ✅ `bytes(len_range)` Strategy (`vec_of(any::<u8>(), …)` のシンタックスシュガー)。
 - ✅ `f32_range` / `f64_range`、0.0 / lo への shrink 付き。
@@ -210,6 +222,9 @@
 - ❌ **Mock / DI フレームワーク**。propcheck の責務外。
 - ❌ **時刻 / 乱数の注入**。ユーザコードや専用 faking ライブラリの
   領分。
+- ❌ **crates.io 公開向けメタデータ整備** (各サブクレートの `readme`
+  / `keywords` / `categories` 追加、`LICENSE-*` ファイル同梱、
+  公開順序ドキュメント等)。配布方針に従い crates.io 公開は行わない。
 
 ---
 

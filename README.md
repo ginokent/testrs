@@ -25,6 +25,23 @@ propcheck = { path = "crates/propcheck" }
 propcheck-fuzz = { path = "crates/propcheck-fuzz" }   # オプション、fuzzing 用
 ```
 
+## 配布方針
+
+本ライブラリは **crates.io には公開しない**。git dependency として
+参照される運用を前提とする。したがって:
+
+- インストールは `git = "..."` 形式の dependency 指定で行う。
+- 内部依存も crates.io 公開要件に縛られない。必要であれば依存先が
+  git のみで配布されているクレートでも構わない (no-deps 方針自体は
+  「実利用クレートに不要な依存を入れない」目的なので維持する)。
+- `readme` / `keywords` / `categories` 等、crates.io ページ向けの
+  メタデータ整備、および公開順序の運用ドキュメント等は対応しない。
+
+```toml
+[dev-dependencies]
+propcheck = { git = "https://github.com/ginokent/testrs", package = "propcheck" }
+```
+
 ## クイックスタート
 
 ```rust

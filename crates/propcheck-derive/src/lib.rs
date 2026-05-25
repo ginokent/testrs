@@ -36,7 +36,7 @@ use proc_macro::{Delimiter, TokenStream, TokenTree};
 ///
 /// オプションのフィールド単位の属性として、
 /// `#[arbitrary(strategy = <expr>)]` を指定できます。これにより、フィールド型の
-/// デフォルトの `Arbitrary` 実装の代わりに、指定した [`propcheck::Strategy`] を
+/// デフォルトの `Arbitrary` 実装の代わりに、指定した `propcheck::Strategy` を
 /// 用いてそのフィールドを生成します。式は Rust の式そのもの、または式を含む
 /// 文字列リテラル（proptest 風）のいずれかを指定できます。
 #[proc_macro_derive(Arbitrary, attributes(arbitrary))]

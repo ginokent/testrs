@@ -25,7 +25,7 @@ use std::ops::Range;
 
 /// 文字列生成 strategy 群 (`ascii_alphanumeric`、`hex_string` など)。
 ///
-/// 完全な一覧については [`strategy_str`](crate::strategy_str) モジュールを参照してください。
+/// 完全な一覧は本モジュール内の関数を参照してください。
 pub mod str {
     pub use crate::strategy_str::*;
 }

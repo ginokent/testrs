@@ -1,4 +1,4 @@
-//! ケースごとの classification 統計と [`classify!`] マクロを提供します。
+//! ケースごとの classification 統計と [`classify!`](macro@crate::classify) マクロを提供します。
 //!
 //! このマクロは、条件が真である場合に現在のテストケースに対してラベルを記録します。
 //! runner は各ケースの前に記録済みのラベルをクリアし、全ケースにわたって集計して

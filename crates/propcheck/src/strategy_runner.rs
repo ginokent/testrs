@@ -1,5 +1,5 @@
-//! 型の [`Arbitrary`] 実装の代わりに [`Strategy`] によって駆動される
-//! ランナーの variant です。
+//! 型の [`Arbitrary`](crate::Arbitrary) 実装の代わりに [`Strategy`]
+//! によって駆動されるランナーの variant です。
 
 use std::fmt::Debug;
 
