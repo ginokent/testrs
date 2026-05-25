@@ -9,6 +9,9 @@
 - Lint: `cargo clippy --workspace --all-targets -- -D warnings` clean。
   `cargo doc --workspace --no-deps` も `RUSTDOCFLAGS=-D warnings` で clean、
   CI に `doc` ジョブと MSRV (1.82) `cargo build` ジョブを追加済み。
+- Toolchain: `rust-toolchain.toml` で **stable 1.95** に pin (rustfmt/clippy
+  同梱)。ローカルと CI の fmt/clippy/test/doc ジョブはすべてこの版で動く。
+  MSRV ジョブのみ `RUSTUP_TOOLCHAIN=1.82` で 1.82 にオーバーライド。
 - 依存方針: std とコンパイラ組み込みの `proc_macro` クレートのみ。
 - ワークスペース全体で `unsafe_code = "forbid"` (最小 `block_on` executor
   も `std::pin::pin!` を使い unsafe 回避)。
