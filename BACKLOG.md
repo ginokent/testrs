@@ -7,6 +7,8 @@
 - テストスイート: **ユニット + 統合テスト 146 件 + doc テスト 7 件 =
   合計 153 件 pass** (doc テスト 10 件は意図的に `ignore` 指定)。
 - Lint: `cargo clippy --workspace --all-targets -- -D warnings` clean。
+  `cargo doc --workspace --no-deps` も `RUSTDOCFLAGS=-D warnings` で clean、
+  CI に `doc` ジョブと MSRV (1.82) `cargo build` ジョブを追加済み。
 - 依存方針: std とコンパイラ組み込みの `proc_macro` クレートのみ。
 - ワークスペース全体で `unsafe_code = "forbid"` (最小 `block_on` executor
   も `std::pin::pin!` を使い unsafe 回避)。

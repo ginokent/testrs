@@ -276,7 +276,7 @@ macro_rules! prop_assert_matches {
 ///
 /// これは *入力* の前提条件（「リストがソートされている場合のみ実行する」）
 /// に使用してください。*環境* の前提条件（「$FOO が設定されている場合のみ
-/// 実行する」）には [`prop_skip!`] を推奨します。
+/// 実行する」）には [`prop_skip!`](crate::prop_skip) を推奨します。
 #[macro_export]
 macro_rules! prop_assume {
     ($cond:expr $(,)?) => {
