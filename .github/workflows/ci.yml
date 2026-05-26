@@ -7,6 +7,26 @@ name: CI
 # github-actions ecosystem が解釈する標準形式 (`.github/dependabot.yml` で
 # 有効化済み) なので、SHA は自動 bump される。
 #
+# ----------------------------------------------------------------
+# 3rd party action allowlist (project policy)
+# ----------------------------------------------------------------
+# GitHub `actions/*` namespace 以外 (= 3rd party) で許容する action は以下の
+# 2 つに限定する。これ以外の 3rd party action の導入は禁止する:
+#
+#   - rustsec/audit-check                RustSec advisory DB scan (audit job)
+#   - EmbarkStudios/cargo-deny-action    license / bans / sources の強制 (deny job)
+#
+# 新規に 3rd party action を導入したい場合は、まず:
+#   1. 機能を `actions/*` first-party action + shell script で代替できないか
+#      検討する (cf. httprs の `dtolnay/rust-toolchain` / `Swatinem/rust-cache`
+#      を rustup 直叩き + `actions/cache` に置き換えた事例)
+#   2. 代替不可な場合のみ、本 allowlist を更新する PR を別立てで起票し、
+#      導入の必要性と supply chain リスク評価を PR 本文に明記する
+# の手順を踏むこと。これは supply chain 攻撃面を最小化する project policy。
+# `actions/*` (= GitHub 1st party) は本 allowlist の対象外であり、必要に応じ
+# 自由に追加してよい。
+# ----------------------------------------------------------------
+#
 # 本 workflow は untrusted な GitHub Actions context 入力 (issue title /
 # PR title / commit message 等) を一切 run: コマンドに展開しない。command
 # injection 経路は無い。
@@ -181,6 +201,9 @@ jobs:
         # と照合するため、CI 上で一時的に lockfile を生成する必要がある。
         # `--offline` を付けないのは初回 resolve でネットアクセスが必要なため。
         run: cargo generate-lockfile
+      # 許容済み 3rd party action: rustsec/audit-check
+      # (本 workflow 冒頭の "3rd party action allowlist" 参照。allowlist 外の
+      # 3rd party action を新規追加する場合は、冒頭コメントの手順に従うこと)
       - uses: rustsec/audit-check@69366f33c96575abad1ee0dba8212993eecbe998 # v2
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -196,6 +219,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      # 許容済み 3rd party action: EmbarkStudios/cargo-deny-action
+      # (本 workflow 冒頭の "3rd party action allowlist" 参照。allowlist 外の
+      # 3rd party action を新規追加する場合は、冒頭コメントの手順に従うこと)
       - uses: EmbarkStudios/cargo-deny-action@091bd13faf7e96935df105635d17ce9a607bc99d # v2
         with:
           command: check licenses bans sources

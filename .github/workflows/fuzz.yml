@@ -15,6 +15,12 @@ name: Fuzz
 # action 使用方針は ci.yml と同一: 全 action は `action@<commit SHA> # <tag>`
 # 形式で SHA pin する (tag re-pointing 経由の supply chain 攻撃阻止)。
 #
+# 3rd party action allowlist は `ci.yml` の冒頭コメントで定義した 2 つ
+# (rustsec/audit-check, EmbarkStudios/cargo-deny-action) のみ許容する project
+# policy に従う。本 workflow は現状 `actions/*` (GitHub 1st party) のみ使用し、
+# 3rd party action は使用していない。新規 3rd party action を追加する場合は
+# ci.yml の allowlist 更新手順に従うこと。
+#
 # 本 workflow は untrusted な GitHub Actions context 入力 (issue title /
 # PR title / commit message 等) を一切 run: コマンドに展開しない。command
 # injection 経路は無い。
