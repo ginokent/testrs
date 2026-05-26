@@ -174,6 +174,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Generate Cargo.lock
+        # testrs は library workspace なので Cargo.lock を `.gitignore` で
+        # 除外している (consumer 側で resolve する設計、binary も含まない)。
+        # `rustsec/audit-check@v2` は Cargo.lock を読んで RustSec advisory DB
+        # と照合するため、CI 上で一時的に lockfile を生成する必要がある。
+        # `--offline` を付けないのは初回 resolve でネットアクセスが必要なため。
+        run: cargo generate-lockfile
       - uses: rustsec/audit-check@69366f33c96575abad1ee0dba8212993eecbe998 # v2
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
