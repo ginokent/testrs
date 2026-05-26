@@ -9,6 +9,11 @@
 #
 # 上限 5 PR / week。propcheck は依存数が極小なのでノイズ閾値も低めに設定。
 # commit prefix を `chore(deps)` に統一して changelog / triage 容易化。
+#
+# cooldown を 14 日に設定する: リリース直後の yank / regression を踏まないよう、
+# 上流のリリースから 14 日経過するまで PR を起票しない。short-lived release
+# でバージョンが頻繁に上下するエコシステム (npm 系ほどではないが cargo / actions
+# でも稀に発生する) に対する defensive な待機期間。
 version: 2
 updates:
   - package-ecosystem: cargo
@@ -21,6 +26,8 @@ updates:
       prefix: chore(deps)
     labels:
       - dependencies
+    cooldown:
+      default-days: 14
 
   - package-ecosystem: github-actions
     directory: /
@@ -32,3 +39,5 @@ updates:
       prefix: chore(deps)
     labels:
       - dependencies
+    cooldown:
+      default-days: 14
