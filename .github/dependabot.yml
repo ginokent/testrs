@@ -1,0 +1,43 @@
+# cargo 依存と GitHub Actions の version pin を週次で追従する dependabot 設定。
+#
+# - cargo ecosystem: SPEC.md の依存方針で直接依存ゼロを維持しているため、
+#   現時点では transitive も含めて hit しない。将来 dev-dep / 直接依存が
+#   追加された瞬間に CVE 追従経路が即座に動くよう defensive に常設する。
+# - github-actions ecosystem: ci.yml / fuzz.yml で `action@<SHA> # <tag>`
+#   形式で pin している全 action の SHA を自動 bump する。tag コメントから
+#   dependabot が解釈する。
+#
+# 上限 5 PR / week。propcheck は依存数が極小なのでノイズ閾値も低めに設定。
+# commit prefix を `chore(deps)` に統一して changelog / triage 容易化。
+#
+# cooldown を 14 日に設定する: リリース直後の yank / regression を踏まないよう、
+# 上流のリリースから 14 日経過するまで PR を起票しない。short-lived release
+# でバージョンが頻繁に上下するエコシステム (npm 系ほどではないが cargo / actions
+# でも稀に発生する) に対する defensive な待機期間。
+version: 2
+updates:
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: chore(deps)
+    labels:
+      - dependencies
+    cooldown:
+      default-days: 14
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: chore(deps)
+    labels:
+      - dependencies
+    cooldown:
+      default-days: 14

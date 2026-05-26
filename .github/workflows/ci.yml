@@ -1,5 +1,16 @@
 name: CI
 
+# サードパーティー action は使用しているものすべて `action@<commit SHA> # <tag>`
+# 形式で pin する。tag (`@v4` 等) のままだと提供元が tag を悪意ある commit に
+# re-point した瞬間 CI が compromise される。SHA pin で解決先 commit を不変化し
+# supply chain 攻撃経路を遮断する。`# <tag>` コメントは dependabot の
+# github-actions ecosystem が解釈する標準形式 (`.github/dependabot.yml` で
+# 有効化済み) なので、SHA は自動 bump される。
+#
+# 本 workflow は untrusted な GitHub Actions context 入力 (issue title /
+# PR title / commit message 等) を一切 run: コマンドに展開しない。command
+# injection 経路は無い。
+
 on:
   push:
     branches: [main]
@@ -9,45 +20,111 @@ on:
 permissions:
   contents: read
 
+# 同じ ref に新しい push が来たら in-progress run をキャンセルする。PR への
+# 連続 push で CI 時間が累積するのを防ぐ。
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  # workspace で `unsafe_code = "forbid"` を強制しているが、CI ではさらに
+  # rustc warning も error 化して regression を防ぐ。
   RUSTFLAGS: -D warnings
 
 jobs:
   fmt:
-    name: fmt
+    name: cargo fmt --check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - name: Show versions
         run: |
           rustup show active-toolchain
           cargo fmt --version
-      - name: cargo fmt --check
-        run: cargo fmt --all -- --check
+      - run: cargo fmt --all -- --check
 
-  lint:
-    name: lint (clippy)
+  clippy:
+    name: cargo clippy -D warnings
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - name: Show versions
         run: |
           rustup show active-toolchain
           cargo clippy --version
-      - name: cargo clippy
-        run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: Cache cargo registry and target
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: cargo-${{ runner.os }}-${{ github.job }}-${{ hashFiles('**/Cargo.lock', 'rust-toolchain.toml') }}
+          restore-keys: |
+            cargo-${{ runner.os }}-${{ github.job }}-
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+
+  doc:
+    name: cargo doc
+    runs-on: ubuntu-latest
+    env:
+      # SPEC.md の Lint / Doc 方針で `cargo doc --workspace --no-deps` が
+      # `RUSTDOCFLAGS=-D warnings` で clean であることを CI 強制する。
+      RUSTDOCFLAGS: -D warnings
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Show versions
+        run: |
+          rustup show active-toolchain
+          cargo --version
+      - name: Cache cargo registry and target
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: cargo-${{ runner.os }}-${{ github.job }}-${{ hashFiles('**/Cargo.lock', 'rust-toolchain.toml') }}
+          restore-keys: |
+            cargo-${{ runner.os }}-${{ github.job }}-
+      - run: cargo doc --workspace --no-deps
 
   test:
-    name: test
-    runs-on: ubuntu-latest
+    name: cargo test (${{ matrix.os }})
+    # OS matrix で proc-macro の手書き parser (`propcheck-derive`) と
+    # in-process executor (`block_on`) の挙動を multi-platform 検証する。
+    # propcheck は consumer 側で windows / macOS でも使われる前提なので、
+    # この 3 OS で test を緑にしてから merge する。
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - name: Show versions
         run: |
           rustup show active-toolchain
           cargo --version
           rustc --version
+      - name: Cache cargo registry and target
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: cargo-${{ runner.os }}-${{ github.job }}-${{ hashFiles('**/Cargo.lock', 'rust-toolchain.toml') }}
+          restore-keys: |
+            cargo-${{ runner.os }}-${{ github.job }}-
       - name: cargo build
         run: cargo build --workspace --all-targets
       - name: cargo test
@@ -55,33 +132,70 @@ jobs:
       - name: cargo test (doc)
         run: cargo test --workspace --doc
 
-  doc:
-    name: doc
-    runs-on: ubuntu-latest
-    env:
-      RUSTDOCFLAGS: -D warnings
-    steps:
-      - uses: actions/checkout@v4
-      - name: Show versions
-        run: |
-          rustup show active-toolchain
-          cargo --version
-      - name: cargo doc
-        run: cargo doc --workspace --no-deps
-
   msrv:
-    name: msrv (1.82)
+    name: MSRV (1.82) cargo test
+    # SPEC.md の Toolchain pin 方針で MSRV = 1.82 (`PanicHookInfo` 由来) を
+    # 宣言している。testrs は直接依存ゼロ (std + proc_macro のみ) であり
+    # dev-dep も無いため、build/check ではなく `cargo test` まで MSRV で
+    # 流して実挙動を検証する (最も厳格な MSRV 保証)。
     runs-on: ubuntu-latest
-    env:
-      RUSTUP_TOOLCHAIN: "1.82"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - name: Install Rust 1.82
-        run: rustup toolchain install 1.82 --profile minimal
+        run: |
+          rustup toolchain install 1.82 --profile minimal --no-self-update
+          rustup default 1.82
       - name: Show versions
         run: |
           rustup show active-toolchain
           cargo --version
           rustc --version
-      - name: cargo build (MSRV)
-        run: cargo build --workspace --all-targets
+      - name: Cache cargo registry and target
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: cargo-${{ runner.os }}-${{ github.job }}-${{ hashFiles('**/Cargo.lock', 'rust-toolchain.toml') }}
+          restore-keys: |
+            cargo-${{ runner.os }}-${{ github.job }}-
+      - run: cargo test --workspace --all-targets
+
+  audit:
+    name: cargo audit (CVE scan)
+    # testrs は SPEC.md の依存方針で「直接依存は std と proc_macro のみ」と
+    # 宣言しているため、現時点で advisory は何も hit しない。本 job は
+    # defensive: 将来意図せず直接依存が追加された瞬間に CVE 監視経路を
+    # 即座に動かす目的で常設する。dependabot とセットで CVE 監視を二重化する
+    # (dependabot = 受動的 PR、audit = 能動的 CI fail)。
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Generate Cargo.lock
+        # testrs は library workspace なので Cargo.lock を `.gitignore` で
+        # 除外している (consumer 側で resolve する設計、binary も含まない)。
+        # `rustsec/audit-check@v2` は Cargo.lock を読んで RustSec advisory DB
+        # と照合するため、CI 上で一時的に lockfile を生成する必要がある。
+        # `--offline` を付けないのは初回 resolve でネットアクセスが必要なため。
+        run: cargo generate-lockfile
+      - uses: rustsec/audit-check@69366f33c96575abad1ee0dba8212993eecbe998 # v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+  deny:
+    name: cargo deny (license/bans/sources)
+    # 設定本体は repo root の `deny.toml` を参照する (action のデフォルト挙動)。
+    # advisories check は上の audit job (rustsec/audit-check@v2) と RustSec DB が
+    # 完全重複するため、deny 側からは意図的に除外する (= `check licenses bans
+    # sources` のみ実行)。これにより:
+    # - audit job 赤 → CVE 系の問題と即特定できる
+    # - deny job 赤 → license 違反 / 禁止 crate 混入 / 不審な source と即特定できる
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: EmbarkStudios/cargo-deny-action@091bd13faf7e96935df105635d17ce9a607bc99d # v2
+        with:
+          command: check licenses bans sources
