@@ -1,0 +1,62 @@
+# cargo-deny config。
+#
+# CI 統合方針 (`.github/workflows/ci.yml` 参照):
+# - advisories: `audit` job (rustsec/audit-check@v2) で強制する。
+# - licenses / bans / sources: 本ファイルを参照し `deny` job
+#   (EmbarkStudios/cargo-deny-action@v2) で `cargo deny check licenses bans
+#   sources` を実行して強制する。advisories を deny 側から外しているのは
+#   RustSec DB の参照が audit と重複するためで、ポリシー的に無効化したわけでは
+#   ない (= ローカルでは `cargo deny check all` を推奨)。
+#
+# testrs は SPEC.md の依存方針で「直接依存は std と proc_macro のみ」と
+# 宣言しているため、現時点では allow / deny どちらも空配列で問題ない。
+# 本ファイルは将来意図せず直接依存が追加された瞬間 (license 違反 / banned
+# crate / 不審な source の混入) に即 CI fail させる defensive な役割を持つ。
+#
+# ローカル事前検証 (PR 提出前に作者自身が走らせる用途):
+#   cargo install cargo-deny
+#   cargo deny check all
+
+[graph]
+all-features = true
+
+[licenses]
+# workspace は MIT / Apache-2.0 dual license で配布されるため (Cargo.toml の
+# `license = "MIT OR Apache-2.0"`)、依存にも permissive license のみ許容する。
+# MPL-2.0 / LGPL は copyleft 強度の懸念があるため逐次判断 (現状は許可しない)。
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Unicode-DFS-2016",
+    "Unicode-3.0",
+    "Zlib",
+]
+confidence-threshold = 0.8
+
+[bans]
+# 直接依存ゼロ方針なので multiple-versions は本来 hit しないが、proc-macro
+# 経由などで間接的に複数版混入する事案を早期検出するため warn に設定する。
+multiple-versions = "warn"
+# 明示的に拒否する crate (Cargo.toml に書き込み禁止) はここで指定。現状なし。
+deny = []
+
+[advisories]
+# RustSec advisory DB の参照先。本 file では advisories は `command:
+# check licenses bans sources` で除外しているため CI 上は無効だが、ローカル
+# `cargo deny check all` 用に設定だけ書いておく。
+db-path = "~/.cargo/advisory-db"
+db-urls = ["https://github.com/rustsec/advisory-db"]
+# 既知 advisory を一時的に無視する場合は ID を ignore に追加 (例: "RUSTSEC-2024-XXXX")。
+ignore = []
+
+[sources]
+# crates.io と GitHub 系の git URL のみ許可。それ以外の registry / git host
+# 経由の依存は明示的に block する。
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []
