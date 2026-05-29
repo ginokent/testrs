@@ -100,9 +100,68 @@ pub trait StrategyExt: Strategy + Sized {
             inner: Box::new(self),
         }
     }
+
+    /// shrink を無効化したラッパー strategy を返します。
+    ///
+    /// 反例が発生してもランナーは `shrink_value` が空 vec を返すため
+    /// shrink を試みません。次のような場面で有用です:
+    ///
+    /// - shrink 自体が高コスト (内部生成器が暗号鍵などの重い計算を伴う)
+    /// - shrink で意味が崩れる (固定長 / 構造化された値の一部を削ると
+    ///   別種の panic が混入し、本来の反例の特定を邪魔する)
+    /// - shrink 経路のバグ調査時に「最初の反例」だけを観察したい
+    ///
+    /// 値生成自体は内部 strategy に透過的に委譲されます。
+    fn no_shrink(self) -> NoShrink<Self> {
+        NoShrink { inner: self }
+    }
+
+    /// 固定 seed と固定 size の Rng で `n` 個の値を生成して返す
+    /// デバッグヘルパーです。
+    ///
+    /// ランナーを起動せずに strategy がどのような値を作るかを確認したい
+    /// 時に使います。同じ strategy に対する呼び出しは何度実行しても同じ
+    /// 列を返すため、`assert_eq!(s.sample(3), vec![...])` のような厳密
+    /// 検証も書けます。
+    ///
+    /// 内部 seed は `env_seed()` (`PROPCHECK_SEED` 環境変数等) とは独立で、
+    /// `size = 32` を `new_value` に渡します。case ごとに size を増やす
+    /// ランナーのスケジュールは再現しないため、これは「真の値域」を網羅
+    /// する手段ではなく、視覚的な動作確認用です。網羅的な検証は
+    /// `run_strategy` / `forall_strategy` を使ってください。
+    fn sample(&self, n: usize) -> Vec<Self::Value> {
+        // 固定 seed (PBT 本体の `env_seed()` とは独立)。デバッグヘルパー
+        // である本 method の再現性は値の Diff を取った時の予測可能性に
+        // 直結するため、env 由来の動的 seed を使わないことが重要。
+        let mut rng = crate::rng::XorShift64::seed_from_u64(0xC0DE_BABE_C0DE_BABE);
+        (0..n).map(|_| self.new_value(&mut rng, 32)).collect()
+    }
 }
 
 impl<S: Strategy> StrategyExt for S {}
+
+// --- NoShrink<S>: shrink 無効化ラッパー ----------------------------
+
+/// shrink を無効化するラッパー strategy です。`[StrategyExt::no_shrink]`
+/// で構築します。
+///
+/// `new_value` は内部 strategy にそのまま委譲しますが、`shrink_value`
+/// は常に空 vec を返すため、ランナーは反例の縮小を行いません。
+pub struct NoShrink<S> {
+    inner: S,
+}
+
+impl<S: Strategy> Strategy for NoShrink<S> {
+    type Value = S::Value;
+
+    fn new_value<R: Rng + ?Sized>(&self, rng: &mut R, size: usize) -> Self::Value {
+        self.inner.new_value(rng, size)
+    }
+
+    fn shrink_value(&self, _value: &Self::Value) -> Vec<Self::Value> {
+        Vec::new()
+    }
+}
 
 // --- any<T>: Arbitrary に委譲する ----------------------------------------
 
@@ -827,5 +886,60 @@ mod tests {
         let (a, b) = s.new_value(&mut rng, 0);
         assert!((0..10).contains(&a));
         assert!((100..200).contains(&b));
+    }
+
+    // --- sample(n) -----------------------------------------------
+
+    #[test]
+    fn sample_returns_requested_count() {
+        let s = int_range(0i32..100);
+        assert_eq!(s.sample(0).len(), 0);
+        assert_eq!(s.sample(1).len(), 1);
+        assert_eq!(s.sample(10).len(), 10);
+    }
+
+    #[test]
+    fn sample_is_deterministic_across_calls() {
+        // 固定 seed のため、同じ strategy への複数回呼び出しは同じ列を返す。
+        let s = int_range(0i32..100);
+        assert_eq!(s.sample(5), s.sample(5));
+        let s2 = vec_of(int_range(0i32..256), 0..8);
+        assert_eq!(s2.sample(3), s2.sample(3));
+    }
+
+    #[test]
+    fn sample_values_lie_in_strategy_range() {
+        let s = int_range(10i32..50);
+        for v in s.sample(50) {
+            assert!((10..50).contains(&v), "out of range: {v}");
+        }
+    }
+
+    // --- no_shrink() ---------------------------------------------
+
+    #[test]
+    fn no_shrink_returns_empty_shrink_candidates() {
+        // ベースの int_range(0..100) は 50 から複数の shrink 候補を持つ
+        // (0 と 25, 37, ... が出る)。それを no_shrink で空にできる。
+        let base = int_range(0i32..100);
+        assert!(!base.shrink_value(&50).is_empty());
+
+        let wrapped = int_range(0i32..100).no_shrink();
+        assert!(wrapped.shrink_value(&50).is_empty());
+    }
+
+    #[test]
+    fn no_shrink_preserves_new_value() {
+        // 同じ seed の Rng なら、no_shrink あり/なしで生成値は完全に一致する。
+        let base = int_range(0i32..100);
+        let wrapped = int_range(0i32..100).no_shrink();
+        let mut rng_a = XorShift64::seed_from_u64(0xBADC0DE);
+        let mut rng_b = XorShift64::seed_from_u64(0xBADC0DE);
+        for _ in 0..10 {
+            assert_eq!(
+                base.new_value(&mut rng_a, 16),
+                wrapped.new_value(&mut rng_b, 16)
+            );
+        }
     }
 }
