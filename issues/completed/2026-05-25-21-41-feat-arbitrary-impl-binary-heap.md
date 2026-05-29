@@ -2,9 +2,9 @@
 
 - Priority: Low
 - Created: 2026-05-25 20:50 JST
-- Completed:
+- Completed: 2026-05-29 JST (feature/add-arbitrary-impl-stdlib-types で実装)
 - Model: -
-- Branch: feature/add-arbitrary-impl-binary-heap
+- Branch: feature/add-arbitrary-impl-stdlib-types
 
 ## 目的
 
@@ -41,3 +41,9 @@ BACKLOG.md 記載の概算は約 20 行。`Vec<T>` の `Arbitrary` を
 - no-deps 方針を維持する
 - 既存 `Vec<T>` の `Arbitrary` 実装と整合的な size 制約を採用する
 - `T: Ord` 制約を trait bound で明示する
+
+## 完了内容
+
+- `crates/propcheck-core/src/collections.rs` に `impl<T: Arbitrary + Ord> Arbitrary for BinaryHeap<T>` を追加 (Vec<T> ベースで `BinaryHeap::from` で構築)
+- shrink は Vec の shrink 経路を流用して `BinaryHeap::from` で再構築
+- 構築可能性 (`binary_heap_arbitrary_is_constructible`) と空への shrink (`binary_heap_shrinks_to_empty`) の単体テストを追加

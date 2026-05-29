@@ -2,9 +2,9 @@
 
 - Priority: Low
 - Created: 2026-05-25 20:52 JST
-- Completed:
+- Completed: 2026-05-29 JST (feature/add-arbitrary-impl-stdlib-types で実装)
 - Model: -
-- Branch: feature/add-arbitrary-impl-wrapping-saturating
+- Branch: feature/add-arbitrary-impl-stdlib-types
 
 ## 目的
 
@@ -41,3 +41,9 @@ BACKLOG.md 記載の概算は両者合わせて約 30 行。内部 `T` の
 - no-deps 方針を維持する
 - 整数の `Arbitrary` 実装と整合する shrink (内部 `T` の shrink を
   ラッパーで再構築する形) を採用する
+
+## 完了内容
+
+- `crates/propcheck-core/src/collections.rs` に `impl<T: Arbitrary> Arbitrary for Wrapping<T>` と `Saturating<T>` を追加 (内部 `T` を生成して newtype 透過で wrap)
+- shrink は内部 `T` の shrink を順次 wrap し直す形式 (整数の shrink_toward_zero と整合)
+- round-trip テスト (内部値の再 wrap で同値) と shrink がゼロに到達する単体テストを追加

@@ -2,9 +2,9 @@
 
 - Priority: Low
 - Created: 2026-05-25 20:55 JST
-- Completed:
+- Completed: 2026-05-29 JST (feature/add-arbitrary-impl-stdlib-types で実装)
 - Model: -
-- Branch: feature/add-arbitrary-impl-cow
+- Branch: feature/add-arbitrary-impl-stdlib-types
 
 ## 目的
 
@@ -44,3 +44,12 @@ BACKLOG.md 記載の概算は両者合わせて約 30 行。`String` / `Vec<T>` 
 - `'static` 制約があるため `Borrowed` を返さず `Owned` 固定とする
 - shrink は内部 `String` / `Vec<T>` の shrink をそのまま `Cow::Owned`
   に包み直す
+
+## 完了内容
+
+- `crates/propcheck-core/src/collections.rs` に以下の 2 つの impl を追加:
+  - `impl Arbitrary for Cow<'static, str>`
+  - `impl<T: Arbitrary + Clone + 'static> Arbitrary for Cow<'static, [T]>`
+- いずれも `'static` 制約のため `Borrowed` バリアントの構築は一般に困難な点を考慮し、常に `Owned` を返す方針 (`String` / `Vec<T>` を生成して `Cow::Owned` で包む)
+- shrink は内部 `String` / `Vec<T>` の shrink を順次 `Cow::Owned` で再構築
+- 常に `Owned` を返すこと、および空への shrink の単体テストを追加

@@ -2,9 +2,9 @@
 
 - Priority: Low
 - Created: 2026-05-25 20:51 JST
-- Completed:
+- Completed: 2026-05-29 JST (feature/add-arbitrary-impl-stdlib-types で実装)
 - Model: -
-- Branch: feature/add-arbitrary-impl-linked-list
+- Branch: feature/add-arbitrary-impl-stdlib-types
 
 ## 目的
 
@@ -40,3 +40,9 @@ BACKLOG.md 記載の概算は約 20 行。`Vec<T>` ベースで生成し
 - no-deps 方針を維持する
 - 既存 `Vec<T>` / `VecDeque<T>` の `Arbitrary` 実装と整合的な
   size 制約を採用する
+
+## 完了内容
+
+- `crates/propcheck-core/src/collections.rs` に `impl<T: Arbitrary> Arbitrary for LinkedList<T>` を追加 (`Vec<T>` ベースで生成し `Iterator::collect` で `LinkedList` 構築)
+- shrink は Vec の shrink 経路を流用 (VecDeque の実装と同形)
+- 構築可能性と空への shrink の単体テストを追加
