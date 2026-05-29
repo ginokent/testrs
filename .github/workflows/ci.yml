@@ -11,10 +11,17 @@ name: CI
 # 3rd party action allowlist (project policy)
 # ----------------------------------------------------------------
 # GitHub `actions/*` namespace 以外 (= 3rd party) で許容する action は以下の
-# 2 つに限定する。これ以外の 3rd party action の導入は禁止する:
+# 1 個のみに限定する。これ以外の 3rd party action の導入は **一切許容しない**:
 #
-#   - rustsec/audit-check                RustSec advisory DB scan (audit job)
-#   - EmbarkStudios/cargo-deny-action    license / bans / sources の強制 (deny job)
+#   - EmbarkStudios/cargo-deny-action    license / bans / sources / advisories (deny job)
+#
+# CVE check も本 1 個 (`cargo deny check ... advisories`) に統合している。
+# 以前は `rustsec/audit-check` で別 job を分けていたが、(1) cargo-audit
+# 0.21.x が CVSS 4.0 形式の advisory (RustSec advisory DB に 2026 年以降
+# 追加) を parse できない問題、(2) library workspace で commit していない
+# Cargo.lock を CI 上で `cargo generate-lockfile` 経由で毎回コンパイル resolve
+# するコスト、の 2 点から本 1 個に集約した。cargo-deny 0.19+ は rustsec を
+# 捨てて独自 advisory parser に移行しており CVSS 4.0 を扱える。
 #
 # 新規に 3rd party action を導入したい場合は、まず:
 #   1. 機能を `actions/*` first-party action + shell script で代替できないか
@@ -23,8 +30,9 @@ name: CI
 #   2. 代替不可な場合のみ、本 allowlist を更新する PR を別立てで起票し、
 #      導入の必要性と supply chain リスク評価を PR 本文に明記する
 # の手順を踏むこと。これは supply chain 攻撃面を最小化する project policy。
+# 追加時は必ず SHA pin + dependabot 連携をセットで導入すること。
 # `actions/*` (= GitHub 1st party) は本 allowlist の対象外であり、必要に応じ
-# 自由に追加してよい。
+# 自由に追加してよい (ただし SHA pin は同様に強制する)。
 # ----------------------------------------------------------------
 #
 # 本 workflow は untrusted な GitHub Actions context 入力 (issue title /
@@ -184,44 +192,45 @@ jobs:
             cargo-${{ runner.os }}-${{ github.job }}-
       - run: cargo test --workspace --all-targets
 
-  audit:
-    name: cargo audit (CVE scan)
-    # testrs は SPEC.md の依存方針で「直接依存は std と proc_macro のみ」と
-    # 宣言しているため、現時点で advisory は何も hit しない。本 job は
-    # defensive: 将来意図せず直接依存が追加された瞬間に CVE 監視経路を
-    # 即座に動かす目的で常設する。dependabot とセットで CVE 監視を二重化する
-    # (dependabot = 受動的 PR、audit = 能動的 CI fail)。
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - name: Generate Cargo.lock
-        # testrs は library workspace なので Cargo.lock を `.gitignore` で
-        # 除外している (consumer 側で resolve する設計、binary も含まない)。
-        # `rustsec/audit-check@v2` は Cargo.lock を読んで RustSec advisory DB
-        # と照合するため、CI 上で一時的に lockfile を生成する必要がある。
-        # `--offline` を付けないのは初回 resolve でネットアクセスが必要なため。
-        run: cargo generate-lockfile
-      # 許容済み 3rd party action: rustsec/audit-check
-      # (本 workflow 冒頭の "3rd party action allowlist" 参照。allowlist 外の
-      # 3rd party action を新規追加する場合は、冒頭コメントの手順に従うこと)
-      - uses: rustsec/audit-check@69366f33c96575abad1ee0dba8212993eecbe998 # v2
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-
   deny:
-    name: cargo deny (license/bans/sources)
+    name: cargo deny (license/bans/sources/advisories)
+    # ================================================================
+    # 本 job は **許容済 3rd party action `EmbarkStudios/cargo-deny-action@v2`**
+    # を SHA pin で利用する。testrs の 3rd party action policy では、この
+    # action の **1 個のみ** を SHA pin で許容し、それ以外の 3rd party
+    # action は禁止する (本 workflow 冒頭の "3rd party action allowlist" 参照)。
+    #
     # 設定本体は repo root の `deny.toml` を参照する (action のデフォルト挙動)。
-    # advisories check は上の audit job (rustsec/audit-check@v2) と RustSec DB が
-    # 完全重複するため、deny 側からは意図的に除外する (= `check licenses bans
-    # sources` のみ実行)。これにより:
-    # - audit job 赤 → CVE 系の問題と即特定できる
-    # - deny job 赤 → license 違反 / 禁止 crate 混入 / 不審な source と即特定できる
+    #
+    # ## CVE check も本 job で行う
+    #
+    # 以前は separate `audit` job (`rustsec/audit-check@v2`) で CVE check を
+    # 行い、deny 側からは advisories を意図的に除外していた。しかし
+    # (1) audit-check は Cargo.lock を要求するため library workspace では
+    # `cargo generate-lockfile` 経由で毎回 dependency resolve を走らせる
+    # コストが課金面で無視できない、(2) cargo-audit 0.21.x が CVSS 4.0 形式
+    # の advisory (RustSec advisory DB に 2026 年以降追加) を parse できず
+    # CI が constantly fail する問題が報告されている、の 2 点から本 job に
+    # 統合した。cargo-deny 0.19+ は rustsec を捨てて独自実装の advisory
+    # parser に移行しており CVSS 4.0 を扱えるため、CVE check も `command:
+    # check ... advisories` で本 action から実行できる。
+    #
+    # これにより:
+    # - deny job 赤 → license 違反 / 禁止 crate 混入 / 不審な source / CVE
+    #   検出 のいずれか。内訳は CI ログで識別する
+    # - audit / deny の責務分離は失うが、cargo-audit の制約 (CVSS 4.0 parse
+    #   不可) と library workspace 特有の lockfile resolve コストから解放される
+    # ================================================================
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      # 許容済み 3rd party action: EmbarkStudios/cargo-deny-action
+      # 許容 3rd party action #1 / 1: EmbarkStudios/cargo-deny-action
       # (本 workflow 冒頭の "3rd party action allowlist" 参照。allowlist 外の
       # 3rd party action を新規追加する場合は、冒頭コメントの手順に従うこと)
+      #
+      # 除外設定 (`ignore` 等) は repo root の `deny.toml` で集約管理する。
+      # ローカルでも `cargo deny check all` を同じ設定で実行できるよう、
+      # CI 側からは追加の CLI フラグを渡さない方針。
       - uses: EmbarkStudios/cargo-deny-action@091bd13faf7e96935df105635d17ce9a607bc99d # v2
         with:
-          command: check licenses bans sources
+          command: check licenses bans sources advisories
