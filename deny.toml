@@ -1,17 +1,20 @@
 # cargo-deny config。
 #
 # CI 統合方針 (`.github/workflows/ci.yml` 参照):
-# - advisories: `audit` job (rustsec/audit-check@v2) で強制する。
-# - licenses / bans / sources: 本ファイルを参照し `deny` job
-#   (EmbarkStudios/cargo-deny-action@v2) で `cargo deny check licenses bans
-#   sources` を実行して強制する。advisories を deny 側から外しているのは
-#   RustSec DB の参照が audit と重複するためで、ポリシー的に無効化したわけでは
-#   ない (= ローカルでは `cargo deny check all` を推奨)。
+# - 本ファイルを参照し `deny` job (EmbarkStudios/cargo-deny-action@v2) で
+#   `cargo deny check licenses bans sources advisories` を実行して強制する。
+# - CVE 監視 (advisories) も本 job に統合済み。以前は `rustsec/audit-check`
+#   で別 job を立てていたが、(1) cargo-audit 0.21.x が CVSS 4.0 形式の
+#   advisory を parse できない問題、(2) library workspace で commit していない
+#   Cargo.lock を CI 上で `cargo generate-lockfile` 経由で毎回コンパイル
+#   resolve するコスト、の 2 点から本 deny job に集約した。cargo-deny 0.19+ は
+#   独自実装の advisory parser を持ち CVSS 4.0 を扱える。
 #
 # testrs は SPEC.md の依存方針で「直接依存は std と proc_macro のみ」と
-# 宣言しているため、現時点では allow / deny どちらも空配列で問題ない。
-# 本ファイルは将来意図せず直接依存が追加された瞬間 (license 違反 / banned
-# crate / 不審な source の混入) に即 CI fail させる defensive な役割を持つ。
+# 宣言しているため、現時点では advisories / licenses / bans / sources の
+# どれも実 hit しない。本ファイルは将来意図せず直接依存が追加された瞬間
+# (license 違反 / banned crate / 不審な source / CVE の混入) に即 CI fail
+# させる defensive な役割を持つ。
 #
 # ローカル事前検証 (PR 提出前に作者自身が走らせる用途):
 #   cargo install cargo-deny
@@ -45,9 +48,10 @@ multiple-versions = "warn"
 deny = []
 
 [advisories]
-# RustSec advisory DB の参照先。本 file では advisories は `command:
-# check licenses bans sources` で除外しているため CI 上は無効だが、ローカル
-# `cargo deny check all` 用に設定だけ書いておく。
+# RustSec advisory DB の参照先。CI の `deny` job で `command: check ...
+# advisories` で強制する。cargo-deny 0.19+ は CVSS 4.0 形式の advisory を
+# 独自 parser で扱えるため、parse 失敗で CI が constantly fail する問題は
+# 起きない (旧 cargo-audit 0.21.x との差分)。
 db-path = "~/.cargo/advisory-db"
 db-urls = ["https://github.com/rustsec/advisory-db"]
 # 既知 advisory を一時的に無視する場合は ID を ignore に追加 (例: "RUSTSEC-2024-XXXX")。
