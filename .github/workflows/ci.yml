@@ -40,10 +40,10 @@ name: CI
 # injection 経路は無い。
 
 on:
-  push:
-    branches: [main]
   pull_request:
-    branches: [main]
+    branches:
+      - main
+      - develop
 
 permissions:
   contents: read
