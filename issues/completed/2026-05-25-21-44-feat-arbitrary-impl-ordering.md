@@ -2,9 +2,9 @@
 
 - Priority: Low
 - Created: 2026-05-25 20:53 JST
-- Completed:
+- Completed: 2026-05-29 JST (feature/add-arbitrary-impl-stdlib-types で実装)
 - Model: -
-- Branch: feature/add-arbitrary-impl-ordering
+- Branch: feature/add-arbitrary-impl-stdlib-types
 
 ## 目的
 
@@ -39,3 +39,9 @@ BACKLOG.md 記載の概算は約 15 行。`Less` / `Equal` / `Greater`
 
 - no-deps 方針を維持する
 - shrink は `Equal` を最小値とする (最も「中立」な値)
+
+## 完了内容
+
+- `crates/propcheck-core/src/collections.rs` に `impl Arbitrary for Ordering` を追加 (`gen_range_usize(0, 3)` による `Less` / `Equal` / `Greater` の一様サンプリング)
+- shrink は `Equal` を終端最小値とし、`Less` / `Greater` から 1 段で `Equal` に到達する形式
+- 3 値網羅 (300 回試行で全 variant 出現) と shrink 形状の単体テストを追加

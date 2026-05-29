@@ -2,9 +2,9 @@
 
 - Priority: Low
 - Created: 2026-05-25 20:54 JST
-- Completed:
+- Completed: 2026-05-29 JST (feature/add-arbitrary-impl-stdlib-types で実装)
 - Model: -
-- Branch: feature/add-arbitrary-impl-reverse
+- Branch: feature/add-arbitrary-impl-stdlib-types
 
 ## 目的
 
@@ -38,3 +38,9 @@ BACKLOG.md 記載の概算は約 15 行。内部 `T::arbitrary` を呼んで
 
 - no-deps 方針を維持する
 - shrink は内部 `T` の shrink をそのまま `Reverse` で包み直す
+
+## 完了内容
+
+- `crates/propcheck-core/src/collections.rs` に `impl<T: Arbitrary> Arbitrary for Reverse<T>` を追加 (内部 `T` を生成して `Reverse(t)` で newtype 透過に wrap)
+- shrink は内部 `T` の shrink を順次 `Reverse` で再構築
+- round-trip と shrink がゼロに到達することの単体テストを追加

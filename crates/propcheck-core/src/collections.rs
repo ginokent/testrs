@@ -3,14 +3,16 @@
 
 use crate::arbitrary::Arbitrary;
 use crate::rng::Rng;
+use std::borrow::Cow;
 use std::cell::{Cell, RefCell};
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
+use std::cmp::{Ordering, Reverse};
+use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap, HashSet, LinkedList, VecDeque};
 use std::ffi::OsString;
 use std::hash::Hash;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6};
 use std::num::{
     NonZeroI16, NonZeroI32, NonZeroI64, NonZeroI8, NonZeroIsize, NonZeroU16, NonZeroU32,
-    NonZeroU64, NonZeroU8, NonZeroUsize,
+    NonZeroU64, NonZeroU8, NonZeroUsize, Saturating, Wrapping,
 };
 use std::ops::Range;
 use std::path::PathBuf;
@@ -21,6 +23,40 @@ use std::time::Duration;
 // --- VecDeque<T> --------------------------------------------------------
 
 impl<T: Arbitrary> Arbitrary for VecDeque<T> {
+    fn arbitrary<R: Rng + ?Sized>(rng: &mut R, size: usize) -> Self {
+        let v: Vec<T> = Arbitrary::arbitrary(rng, size);
+        v.into_iter().collect()
+    }
+
+    fn shrink(&self) -> Box<dyn Iterator<Item = Self> + '_> {
+        let v: Vec<T> = self.iter().cloned().collect();
+        let shrinks: Vec<Vec<T>> = v.shrink().collect();
+        Box::new(shrinks.into_iter().map(|v| v.into_iter().collect()))
+    }
+}
+
+// --- BinaryHeap<T> ------------------------------------------------------
+
+impl<T: Arbitrary + Ord> Arbitrary for BinaryHeap<T> {
+    fn arbitrary<R: Rng + ?Sized>(rng: &mut R, size: usize) -> Self {
+        // `BinaryHeap<T>` は `Vec<T>` ベース。`Vec<T>::Arbitrary` から
+        // 派生させて size 制約を Vec と共通化する。
+        let v: Vec<T> = Arbitrary::arbitrary(rng, size);
+        BinaryHeap::from(v)
+    }
+
+    fn shrink(&self) -> Box<dyn Iterator<Item = Self> + '_> {
+        // 内部値の順序は heap property のためで shrink の意味論には
+        // 影響しないため、Vec の shrink 経路をそのまま流用する。
+        let v: Vec<T> = self.iter().cloned().collect();
+        let shrinks: Vec<Vec<T>> = v.shrink().collect();
+        Box::new(shrinks.into_iter().map(BinaryHeap::from))
+    }
+}
+
+// --- LinkedList<T> ------------------------------------------------------
+
+impl<T: Arbitrary> Arbitrary for LinkedList<T> {
     fn arbitrary<R: Rng + ?Sized>(rng: &mut R, size: usize) -> Self {
         let v: Vec<T> = Arbitrary::arbitrary(rng, size);
         v.into_iter().collect()
@@ -205,6 +241,34 @@ impl<T: Arbitrary> Arbitrary for Arc<T> {
     fn shrink(&self) -> Box<dyn Iterator<Item = Self> + '_> {
         let v: Vec<T> = (**self).shrink().collect();
         Box::new(v.into_iter().map(Arc::new))
+    }
+}
+
+// --- Cow<'static, str>, Cow<'static, [T]> -------------------------------
+
+// `Cow<'static, _>` は `'static` 制約のため `Borrowed` バリアントの構築が
+// 一般には困難 (任意の `&'static str` / `&'static [T]` を Rng から作れない)。
+// このため常に `Owned` を返す。これは Cow を含む型の round-trip テストや
+// `to_mut` 系の挙動検証には十分。
+impl Arbitrary for Cow<'static, str> {
+    fn arbitrary<R: Rng + ?Sized>(rng: &mut R, size: usize) -> Self {
+        Cow::Owned(String::arbitrary(rng, size))
+    }
+    fn shrink(&self) -> Box<dyn Iterator<Item = Self> + '_> {
+        let s: String = self.as_ref().to_owned();
+        let shrinks: Vec<String> = s.shrink().collect();
+        Box::new(shrinks.into_iter().map(Cow::Owned))
+    }
+}
+
+impl<T: Arbitrary + Clone + 'static> Arbitrary for Cow<'static, [T]> {
+    fn arbitrary<R: Rng + ?Sized>(rng: &mut R, size: usize) -> Self {
+        Cow::Owned(Vec::<T>::arbitrary(rng, size))
+    }
+    fn shrink(&self) -> Box<dyn Iterator<Item = Self> + '_> {
+        let v: Vec<T> = self.as_ref().to_vec();
+        let shrinks: Vec<Vec<T>> = v.shrink().collect();
+        Box::new(shrinks.into_iter().map(Cow::Owned))
     }
 }
 
@@ -412,6 +476,66 @@ impl_arbitrary_nonzero!(
     NonZeroIsize => isize,
 );
 
+// --- Wrapping<T>, Saturating<T> ----------------------------------------
+
+// 両者とも内部の `T` を生成して transparent に wrap するだけ。shrink は
+// 内部 `T` の shrink を順次 wrap し直す。これは整数の `Arbitrary` 実装
+// (shrink_toward_zero_*) と完全に整合する。
+impl<T: Arbitrary> Arbitrary for Wrapping<T> {
+    fn arbitrary<R: Rng + ?Sized>(rng: &mut R, size: usize) -> Self {
+        Wrapping(T::arbitrary(rng, size))
+    }
+    fn shrink(&self) -> Box<dyn Iterator<Item = Self> + '_> {
+        let shrinks: Vec<T> = self.0.shrink().collect();
+        Box::new(shrinks.into_iter().map(Wrapping))
+    }
+}
+
+impl<T: Arbitrary> Arbitrary for Saturating<T> {
+    fn arbitrary<R: Rng + ?Sized>(rng: &mut R, size: usize) -> Self {
+        Saturating(T::arbitrary(rng, size))
+    }
+    fn shrink(&self) -> Box<dyn Iterator<Item = Self> + '_> {
+        let shrinks: Vec<T> = self.0.shrink().collect();
+        Box::new(shrinks.into_iter().map(Saturating))
+    }
+}
+
+// --- Ordering ----------------------------------------------------------
+
+impl Arbitrary for Ordering {
+    fn arbitrary<R: Rng + ?Sized>(rng: &mut R, _size: usize) -> Self {
+        // `Less` / `Equal` / `Greater` を一様に 3 値サンプリングする。
+        // `gen_range_usize(0, 3)` は半開区間 [0, 3) のため 0/1/2 を返す。
+        match rng.gen_range_usize(0, 3) {
+            0 => Ordering::Less,
+            1 => Ordering::Equal,
+            _ => Ordering::Greater,
+        }
+    }
+
+    fn shrink(&self) -> Box<dyn Iterator<Item = Self> + '_> {
+        // `Equal` を最小 (最も中立な) 値とし、`Less` / `Greater` は
+        // `Equal` に 1 段だけ縮める。
+        match self {
+            Ordering::Equal => Box::new(std::iter::empty()),
+            Ordering::Less | Ordering::Greater => Box::new(std::iter::once(Ordering::Equal)),
+        }
+    }
+}
+
+// --- Reverse<T> --------------------------------------------------------
+
+impl<T: Arbitrary> Arbitrary for Reverse<T> {
+    fn arbitrary<R: Rng + ?Sized>(rng: &mut R, size: usize) -> Self {
+        Reverse(T::arbitrary(rng, size))
+    }
+    fn shrink(&self) -> Box<dyn Iterator<Item = Self> + '_> {
+        let shrinks: Vec<T> = self.0.shrink().collect();
+        Box::new(shrinks.into_iter().map(Reverse))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -546,5 +670,161 @@ mod tests {
         assert!(v.iter().all(|x| x.get() != 0));
         // 少なくとも1つの shrink 候補が存在するはずです。
         assert!(!v.is_empty());
+    }
+
+    // --- BinaryHeap<T> ---------------------------------------------
+
+    #[test]
+    fn binary_heap_arbitrary_is_constructible() {
+        let mut rng = r();
+        let h: BinaryHeap<u8> = Arbitrary::arbitrary(&mut rng, 10);
+        // BinaryHeap は size + 1 まで (Vec と同じ size 制約)。
+        assert!(h.len() <= 11);
+    }
+
+    #[test]
+    fn binary_heap_shrinks_to_empty() {
+        let mut h = BinaryHeap::new();
+        h.push(3u32);
+        h.push(1u32);
+        let v: Vec<BinaryHeap<u32>> = h.shrink().collect();
+        assert!(v.iter().any(|x| x.is_empty()));
+    }
+
+    // --- LinkedList<T> ---------------------------------------------
+
+    #[test]
+    fn linked_list_arbitrary_is_constructible() {
+        let mut rng = r();
+        let l: LinkedList<u8> = Arbitrary::arbitrary(&mut rng, 10);
+        // LinkedList は size + 1 まで (Vec と同じ size 制約)。
+        assert!(l.len() <= 11);
+    }
+
+    #[test]
+    fn linked_list_shrinks_to_empty() {
+        let mut l = LinkedList::new();
+        l.push_back(1u32);
+        l.push_back(2u32);
+        let v: Vec<LinkedList<u32>> = l.shrink().collect();
+        assert!(v.iter().any(|x| x.is_empty()));
+    }
+
+    // --- Cow<'static, str>, Cow<'static, [T]> ----------------------
+
+    #[test]
+    fn cow_str_arbitrary_is_owned() {
+        let mut rng = r();
+        let c: Cow<'static, str> = Arbitrary::arbitrary(&mut rng, 10);
+        // 設計方針通り常に Owned バリアントを返す。
+        assert!(matches!(c, Cow::Owned(_)));
+    }
+
+    #[test]
+    fn cow_str_shrinks_to_empty() {
+        let c: Cow<'static, str> = Cow::Owned("hello".to_owned());
+        let v: Vec<Cow<'static, str>> = c.shrink().collect();
+        assert!(v.iter().any(|x| x.is_empty()));
+    }
+
+    #[test]
+    fn cow_slice_arbitrary_is_owned() {
+        let mut rng = r();
+        let c: Cow<'static, [u8]> = Arbitrary::arbitrary(&mut rng, 10);
+        assert!(matches!(c, Cow::Owned(_)));
+    }
+
+    #[test]
+    fn cow_slice_shrinks_to_empty() {
+        let c: Cow<'static, [u32]> = Cow::Owned(vec![1, 2, 3]);
+        let v: Vec<Cow<'static, [u32]>> = c.shrink().collect();
+        assert!(v.iter().any(|x| x.is_empty()));
+    }
+
+    // --- Wrapping<T>, Saturating<T> --------------------------------
+
+    #[test]
+    fn wrapping_round_trip_through_inner() {
+        let mut rng = r();
+        for _ in 0..50 {
+            // `T` を生成して `Wrapping` で包んだ値の内部 `T` は、元の `T`
+            // を独立に生成した分布と同じ範囲に乗る (= newtype 透過性)。
+            let w: Wrapping<u32> = Arbitrary::arbitrary(&mut rng, 16);
+            // 取り出した内部値が再度 `Wrapping` でラップしても同値であること。
+            assert_eq!(Wrapping(w.0), w);
+        }
+    }
+
+    #[test]
+    fn wrapping_shrinks_through_inner() {
+        let w = Wrapping(100u32);
+        let v: Vec<Wrapping<u32>> = w.shrink().collect();
+        assert!(v.iter().any(|x| x.0 == 0));
+    }
+
+    #[test]
+    fn saturating_round_trip_through_inner() {
+        let mut rng = r();
+        for _ in 0..50 {
+            let s: Saturating<i32> = Arbitrary::arbitrary(&mut rng, 16);
+            assert_eq!(Saturating(s.0), s);
+        }
+    }
+
+    #[test]
+    fn saturating_shrinks_through_inner() {
+        let s = Saturating(100u32);
+        let v: Vec<Saturating<u32>> = s.shrink().collect();
+        assert!(v.iter().any(|x| x.0 == 0));
+    }
+
+    // --- Ordering --------------------------------------------------
+
+    #[test]
+    fn ordering_arbitrary_covers_all_three_variants() {
+        let mut rng = r();
+        let mut seen_less = false;
+        let mut seen_equal = false;
+        let mut seen_greater = false;
+        for _ in 0..300 {
+            match Ordering::arbitrary(&mut rng, 1) {
+                Ordering::Less => seen_less = true,
+                Ordering::Equal => seen_equal = true,
+                Ordering::Greater => seen_greater = true,
+            }
+        }
+        // 一様サンプリングなので 300 回試行すれば 3 値とも実用上必ず出る
+        // (1 値も出ない確率は (2/3)^300 ≈ 10^-52)。
+        assert!(seen_less && seen_equal && seen_greater);
+    }
+
+    #[test]
+    fn ordering_shrinks_toward_equal() {
+        // Equal は終端 (shrink 候補なし)。
+        let v: Vec<Ordering> = Ordering::Equal.shrink().collect();
+        assert!(v.is_empty());
+        // Less / Greater は Equal に 1 段で到達できる。
+        let v: Vec<Ordering> = Ordering::Less.shrink().collect();
+        assert_eq!(v, vec![Ordering::Equal]);
+        let v: Vec<Ordering> = Ordering::Greater.shrink().collect();
+        assert_eq!(v, vec![Ordering::Equal]);
+    }
+
+    // --- Reverse<T> ------------------------------------------------
+
+    #[test]
+    fn reverse_round_trip_through_inner() {
+        let mut rng = r();
+        for _ in 0..50 {
+            let r: Reverse<u32> = Arbitrary::arbitrary(&mut rng, 16);
+            assert_eq!(Reverse(r.0), r);
+        }
+    }
+
+    #[test]
+    fn reverse_shrinks_through_inner() {
+        let r = Reverse(100u32);
+        let v: Vec<Reverse<u32>> = r.shrink().collect();
+        assert!(v.iter().any(|x| x.0 == 0));
     }
 }
