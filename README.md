@@ -82,8 +82,9 @@ fn stress_test(v: Vec<u32>) {
 | `prop_oneof!` / `prop_compose!`            | Strategy combinator マクロ                         |
 | `prop_recursive!` / `prop_filter!`         | 再帰木 / フィルタ付き strategy                      |
 | `Strategy::flat_map`                       | 依存生成                                            |
-| Strategy combinator                      | `propcheck::strategy::*`                            |
+| Strategy combinator                      | `propcheck::strategy::*` (`.sample(n)` / `.no_shrink()` 含む) |
 | 文字列 generator                         | `propcheck::strategy::str::*` (ascii, hex, …)       |
+| ドメイン strategy パック                 | `propcheck::strategy::domain::*` (`email_like` / `url_like` / `uuid_like` / `ipv4_dotted` / `iso8601_date`) |
 | `char_range` / `bytes` / `f64_range`       | `propcheck::strategy::{char_range, bytes, f32_range, f64_range}` |
 | 状態機械テスト                             | `propcheck::state_machine::run_state_machine`       |
 | Differential テスト                        | `propcheck::{differential, differential_with}`      |
@@ -191,6 +192,8 @@ fn percentage_stays_in_range() {
 - `one_of(vec![...])` — 一様選択。`weighted_one_of` でバイアス可
 - `tuple(a, b)` — 直積
 - 任意の strategy に `.map(f)` / `.filter(pred)` / `.boxed()`
+- `.no_shrink()` — shrink を無効化するラッパー (高コストな strategy や、shrink で意味が崩れる構造化値の救済)
+- `.sample(n) -> Vec<Value>` — 固定 seed + size でテストを起動せず `n` 個生成 (デバッグ確認用)
 - `prop_oneof![a, b]` や `prop_oneof![1 => a, 4 => b]` — 便利マクロ
 
 ### 5. バイト指向ターゲットをファズ
@@ -421,6 +424,93 @@ fn double_angle_identity(x: f64) {
     prop_assert_close!((2.0 * x).sin(), 2.0 * x.sin() * x.cos(), epsilon = 1e-9);
 }
 ```
+
+### 16. ドメイン strategy で parser をファズ
+
+```rust
+use propcheck::run_strategy;
+use propcheck::strategy::domain;
+
+#[test]
+fn url_parser_handles_arbitrary_urls() {
+    // デフォルトの url_like は http/https、port なし、50% で path 付与。
+    run_strategy("url parser does not panic", domain::url_like(), |u: &String| {
+        let _ = my_url::parse(u);
+        true
+    });
+}
+
+#[test]
+fn websocket_url_parser_with_port() {
+    // builder で scheme / port をカスタマイズ。
+    let strategy = domain::url_like()
+        .with_schemes(&["ws", "wss"])
+        .with_port_range(8000..9000);
+    run_strategy("websocket urls", strategy, |u: &String| {
+        let _ = my_url::parse(u);
+        true
+    });
+}
+
+#[test]
+fn uuid_parser_does_not_panic() {
+    // uuid_like は version/variant bit を強制しないため、厳格な v4 parser
+    // からは reject されえる。ここでは「panic しない」ことのみ保証する。
+    run_strategy("uuid parser robustness", domain::uuid_like(), |s: &String| {
+        let _ = my_uuid::parse(s);
+        true
+    });
+}
+```
+
+`domain::*` の各 strategy は `*_like` 命名で「仕様準拠ではない近似」を
+示します。RFC 厳格準拠の検証ではなく、parser のクラッシュ耐性や
+ラウンドトリップを叩くための「形が似た値」を提供します。
+他の選択肢: `email_like` / `ipv4_dotted` / `iso8601_date`。
+
+### 17. `Strategy::sample(n)` でデバッグ確認
+
+```rust
+use propcheck::strategy::{domain, int_range, vec_of, StrategyExt};
+
+// テストを書かずに strategy の生成例を覗き見る。固定 seed のため
+// 何度呼んでも同じ列が返り、Diff 検証にも使える。
+let examples: Vec<String> = domain::email_like().sample(3);
+dbg!(&examples);
+// → ["abc@example.com", ...]
+
+// 自作 strategy の動作確認:
+let s = vec_of(int_range(0..100), 0..5);
+assert_eq!(s.sample(3).len(), 3);
+```
+
+`sample(n)` はランナーの size スケジュールは再現せず、視覚的な動作
+確認用です。網羅的な検証は `run_strategy` / `forall_strategy` を
+使ってください。
+
+### 18. `Strategy::no_shrink()` で shrink を抑制
+
+```rust
+use propcheck::run_strategy;
+use propcheck::strategy::{any, vec_of, StrategyExt};
+
+// 16 byte 固定長の鍵を生成。shrink すると鍵長が崩れて別 panic に化けるため
+// no_shrink で停止し、最初の反例をそのまま観察する。
+let key_strategy = vec_of(any::<u8>(), 16..17).no_shrink();
+run_strategy("aes round trip", key_strategy, |k: &Vec<u8>| {
+    let cipher = aes::encrypt(k, b"plaintext");
+    aes::decrypt(k, &cipher) == b"plaintext"
+});
+```
+
+ユースケース:
+
+- shrink 自体が高コスト (暗号鍵生成など、再 generate に時間がかかる)
+- shrink で意味が崩れる (固定長 / 構造化 token の一部を削ると別種の panic に化ける)
+- shrink 経路のバグ調査 (shrink を切って「最初の反例」を見たい)
+
+`new_value` は内部 strategy にそのまま委譲されるため、値生成の分布は
+変わりません。
 
 ## 失敗の再現
 
