@@ -30,6 +30,15 @@ pub mod str {
     pub use crate::strategy_str::*;
 }
 
+/// `*_like` 命名のドメイン固有 strategy 群 (email / url / uuid / ipv4 /
+/// iso8601_date) です。仕様準拠ではない近似で、parser / serializer 系の
+/// PBT に使うことを想定しています。
+///
+/// 完全な一覧と各々の制限事項は本モジュール内の関数を参照してください。
+pub mod domain {
+    pub use crate::strategy_domain::*;
+}
+
 /// [`Strategy::Value`] 型の値を生成し shrink する方法を知る、合成可能な generator です。
 pub trait Strategy {
     /// この strategy が生成する値の型です。
