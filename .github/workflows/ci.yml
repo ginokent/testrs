@@ -71,6 +71,19 @@ name: CI
 #      の形にする
 #   3. checkout の `ref:` を pull_request イベント時は省略 (自動で PR HEAD)、
 #      issue_comment イベント時のみ `refs/pull/N/head` を渡すよう分岐
+#
+# Branch protection の Required status checks との連携:
+# ----------------------------------------------------------------
+# `issue_comment` event の workflow が生成する標準の check run は
+# `github.sha` (= default branch HEAD) に紐づき、PR HEAD には反映されない。
+# このため PR の "Checks" タブには何も出ず、Branch protection の Required
+# status checks が永遠に未達となる (= merge ブロック)。対策として、各 job
+# の末尾に `./.github/actions/report-check` composite action を呼ぶ step
+# を追加し、PR HEAD commit に対する check run を自前で投げ込む。これにより:
+# - PR の "Checks" タブに job 毎の結果が表示される
+# - Branch protection の Required check 名と job の `name:` を一致させれば
+#   そのまま Required 設定が機能する
+# `permissions: checks: write` が必須 (本 workflow で設定済)。
 # ================================================================
 
 on:
@@ -81,6 +94,12 @@ permissions:
   contents: read
   # issue_comment イベントから PR HEAD を checkout するため必要。
   pull-requests: read
+  # 各 job 完了時に PR HEAD commit へ check run を投影するために必要
+  # (issue_comment event の標準 check run は default branch HEAD に紐づいて
+  # PR HEAD には反映されないため、自前で check run を作成して Branch
+  # protection の Required check を満たす。冒頭「Branch protection の
+  # Required status checks との連携」コメント参照)。
+  checks: write
 
 # 同じ PR への連続 `!run ci` コメントで in-progress run を cancel する。
 # `issue_comment` event の `github.ref` は default branch を指してしまい
@@ -160,6 +179,15 @@ jobs:
           rustup show active-toolchain
           cargo fmt --version
       - run: cargo fmt --all -- --check
+      # PR HEAD への check run 投影 (冒頭「Branch protection との連携」参照)。
+      # name は job の name と一致させ、Branch protection の Required check 設定
+      # ("cargo fmt --check") と完全一致させる。
+      - name: Report check to PR HEAD
+        if: always()
+        uses: ./.github/actions/report-check
+        with:
+          name: cargo fmt --check
+          status: ${{ job.status }}
 
   clippy:
     name: cargo clippy -D warnings
@@ -186,6 +214,12 @@ jobs:
           restore-keys: |
             cargo-${{ runner.os }}-${{ github.job }}-
       - run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: Report check to PR HEAD
+        if: always()
+        uses: ./.github/actions/report-check
+        with:
+          name: cargo clippy -D warnings
+          status: ${{ job.status }}
 
   doc:
     name: cargo doc
@@ -216,6 +250,12 @@ jobs:
           restore-keys: |
             cargo-${{ runner.os }}-${{ github.job }}-
       - run: cargo doc --workspace --no-deps
+      - name: Report check to PR HEAD
+        if: always()
+        uses: ./.github/actions/report-check
+        with:
+          name: cargo doc
+          status: ${{ job.status }}
 
   # ----------------------------------------------------------------
   # test-linux: `!run ci` (matrix 指定なし) のとき ubuntu-latest のみで実行
@@ -252,6 +292,12 @@ jobs:
         run: cargo test --workspace --all-targets
       - name: cargo test (doc)
         run: cargo test --workspace --doc
+      - name: Report check to PR HEAD
+        if: always()
+        uses: ./.github/actions/report-check
+        with:
+          name: cargo test (ubuntu-latest)
+          status: ${{ job.status }}
 
   # ----------------------------------------------------------------
   # test-matrix: `!run ci matrix` のときのみ ubuntu / macos / windows で実行
@@ -295,6 +341,14 @@ jobs:
         run: cargo test --workspace --all-targets
       - name: cargo test (doc)
         run: cargo test --workspace --doc
+      - name: Report check to PR HEAD
+        if: always()
+        uses: ./.github/actions/report-check
+        with:
+          # matrix 各 OS で独立 check run を作成し、Branch protection で
+          # OS 別に Required 設定可能にする。
+          name: cargo test (${{ matrix.os }})
+          status: ${{ job.status }}
 
   msrv:
     name: MSRV (1.82) cargo test
@@ -330,6 +384,12 @@ jobs:
           restore-keys: |
             cargo-${{ runner.os }}-${{ github.job }}-
       - run: cargo test --workspace --all-targets
+      - name: Report check to PR HEAD
+        if: always()
+        uses: ./.github/actions/report-check
+        with:
+          name: MSRV (1.82) cargo test
+          status: ${{ job.status }}
 
   deny:
     name: cargo deny (license/bans/sources/advisories)
@@ -376,3 +436,9 @@ jobs:
       - uses: EmbarkStudios/cargo-deny-action@091bd13faf7e96935df105635d17ce9a607bc99d # v2
         with:
           command: check licenses bans sources advisories
+      - name: Report check to PR HEAD
+        if: always()
+        uses: ./.github/actions/report-check
+        with:
+          name: cargo deny (license/bans/sources/advisories)
+          status: ${{ job.status }}
