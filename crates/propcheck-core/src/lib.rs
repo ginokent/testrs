@@ -12,6 +12,7 @@ pub mod arbitrary;
 pub mod collections;
 pub mod rng;
 pub mod strategy;
+mod strategy_domain;
 mod strategy_str;
 
 pub use arbitrary::Arbitrary;
