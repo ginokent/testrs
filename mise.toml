@@ -1,0 +1,41 @@
+# mise (https://mise.jdx.dev/) のタスクランナー / ツール管理設定。
+#
+# - `mise install` で必要な cargo extension (cargo-deny 等) を一括 install
+# - `mise run ci`  で fmt / clippy / doc / test / deny を並列実行
+# - 個別 task は `mise run fmt` 等で実行可能
+# - 各 task の実体は scripts/*.sh (単純な bash wrapper)
+#
+# rust 本体は rust-toolchain.toml (channel = "1.95") で pin されているため、
+# 本ファイルの [tools] では rustc / cargo は管理しない。CI 側 (GitHub
+# Actions) と整合させるための追加 cargo extension のみ列挙する。
+
+[tools]
+# CI の deny job (cargo-deny-action) と同じツール。`mise install` で自動
+# install され、scripts/deny.sh から呼ばれる。
+"cargo:cargo-deny" = "latest"
+
+[tasks.fmt]
+description = "cargo fmt --all -- --check"
+run = "./scripts/fmt.sh"
+
+[tasks.clippy]
+description = "cargo clippy --workspace --all-targets -- -D warnings"
+run = "./scripts/clippy.sh"
+
+[tasks.doc]
+description = "RUSTDOCFLAGS=-D warnings cargo doc --workspace --no-deps"
+run = "./scripts/doc.sh"
+
+[tasks.test]
+description = "cargo test --workspace --all-targets + --doc"
+run = "./scripts/test.sh"
+
+[tasks.deny]
+description = "cargo deny check all (license / bans / sources / advisories)"
+run = "./scripts/deny.sh"
+
+[tasks.ci]
+description = "CI 相当の全 check を並列実行 (fmt / clippy / doc / test / deny)"
+# mise は depends で列挙したタスクを並列実行する。失敗が出た時点で他タスク
+# も中断され、ci 全体が非ゼロ exit で終わる。
+depends = ["fmt", "clippy", "doc", "test", "deny"]
