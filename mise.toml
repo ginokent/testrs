@@ -1,0 +1,56 @@
+# mise (https://mise.jdx.dev/) のタスクランナー / ツール管理設定。
+#
+# - `mise install` で必要な cargo extension (cargo-deny 等) を一括 install
+# - `mise run ci`         開発 loop 用: dirty check + fmt / clippy / doc /
+#                         test / deny を並列実行 (check run は投げない)
+# - `mise run ci-publish-status-dangerously`
+#                         正式署名用 (危険): ci 相当 + 結果を **CI と同名**
+#                         の commit status として PR HEAD に投影 (`gh` CLI 必須)。
+#                         CONTRIBUTING.md を読んでから利用すること
+# - 個別 task は `mise run fmt` 等で実行可能
+# - 各 task の実体は scripts/*.sh (単純な bash wrapper)
+#
+# rust 本体は rust-toolchain.toml (channel = "1.95") で pin されているため、
+# 本ファイルの [tools] では rustc / cargo は管理しない。CI 側 (GitHub
+# Actions) と整合させるための追加 cargo extension のみ列挙する。
+#
+# ⚠️ ci-publish-status-dangerously の名前について:
+# `-dangerously` を CLI 名に入れているのは、本 task が GitHub Actions の CI
+# signal を local 1 回で override できる構造であることを利用前に明示する
+# 意図 (npm `--force` 系の命名意図と同じ)。`-status-` は投影先 API が commit
+# statuses (`/repos/.../statuses/{sha}`) であることを示す (check-runs API は
+# PAT 認証では作れないため commit statuses を採用、詳細は CONTRIBUTING.md)。
+# 設計判断の詳細・トレードオフ・第三者環境での切替案は CONTRIBUTING.md を参照。
+
+[tools]
+# CI の deny job (cargo-deny-action) と同じツール。`mise install` で自動
+# install され、scripts/deny.sh から呼ばれる。
+"cargo:cargo-deny" = "latest"
+
+[tasks.fmt]
+description = "cargo fmt --all -- --check"
+run = "./scripts/fmt.sh"
+
+[tasks.clippy]
+description = "cargo clippy --workspace --all-targets -- -D warnings"
+run = "./scripts/clippy.sh"
+
+[tasks.doc]
+description = "RUSTDOCFLAGS=-D warnings cargo doc --workspace --no-deps"
+run = "./scripts/doc.sh"
+
+[tasks.test]
+description = "cargo test --workspace --all-targets + --doc"
+run = "./scripts/test.sh"
+
+[tasks.deny]
+description = "cargo deny check all (license / bans / sources / advisories)"
+run = "./scripts/deny.sh"
+
+[tasks.ci]
+description = "preflight + fmt / clippy / doc / test / deny を並列実行 (開発 loop 用、check run は投げない)"
+run = "./scripts/ci.sh"
+
+[tasks.ci-publish-status-dangerously]
+description = "(危険) preflight + push 済み確認 + ci 相当 + 結果を CI と同名 commit status として PR HEAD に投影。CONTRIBUTING.md 参照"
+run = "./scripts/ci-publish-status-dangerously.sh"

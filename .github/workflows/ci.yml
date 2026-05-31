@@ -37,21 +37,75 @@ name: CI
 #
 # 本 workflow は untrusted な GitHub Actions context 入力 (issue title /
 # PR title / commit message 等) を一切 run: コマンドに展開しない。command
-# injection 経路は無い。
+# injection 経路は無い。comment body 等の文字列を扱う場合は env: 経由で
+# 渡し、`run:` 内では `${{ ... }}` 展開を避ける (gate job 参照)。
+
+# ================================================================
+# Trigger 方針
+# ================================================================
+# 現在の運用: **PR コメントによる手動 trigger のみ** に切り替え中。コスト
+# 最適化が目的で、PR 上で以下のコメントを投稿することで CI を起動する:
+#
+#   - `!run ci`         → fmt / clippy / doc / test (Linux only) / msrv / deny
+#   - `!run ci matrix`  → 同上、ただし test を ubuntu / macos / windows の
+#                         3 OS matrix で実行
+#
+# コメント author が OWNER / MEMBER / COLLABORATOR のいずれかに該当する場合
+# のみ gate job が通る (外部 attacker が fork から trigger するのを防ぐ)。
+# 詳細は下の gate job のコメント参照。
+#
+# 将来の復活方針 (TODO):
+# ----------------------------------------------------------------
+# 将来 PR 数が増加するか、マージ前ブロッキング (PR で必須緑) が必要になった
+# 時点で、以下の自動 trigger を **追加** で復活させる予定:
+#
+#   pull_request:
+#     branches:
+#       - main
+#       - develop
+#
+# 復活手順:
+#   1. 下の `on:` ブロックに `pull_request:` を追加 (issue_comment と併存可)
+#   2. gate job の `if:` から `contains(..., '!run ci')` 条件を撤去し、
+#      `github.event_name == 'pull_request' || (... 既存 comment 条件 ...)`
+#      の形にする
+#   3. checkout の `ref:` を pull_request イベント時は省略 (自動で PR HEAD)、
+#      issue_comment イベント時のみ `refs/pull/N/head` を渡すよう分岐
+#
+# Branch protection の Required status checks との連携:
+# ----------------------------------------------------------------
+# `issue_comment` event の workflow が生成する標準の check run は
+# `github.sha` (= default branch HEAD) に紐づき、PR HEAD には反映されない。
+# このため PR の "Checks" タブには何も出ず、Branch protection の Required
+# status checks が永遠に未達となる (= merge ブロック)。対策として、各 job
+# の末尾に `./.github/actions/report-check` composite action を呼ぶ step
+# を追加し、PR HEAD commit に対する check run を自前で投げ込む。これにより:
+# - PR の "Checks" タブに job 毎の結果が表示される
+# - Branch protection の Required check 名と job の `name:` を一致させれば
+#   そのまま Required 設定が機能する
+# `permissions: checks: write` が必須 (本 workflow で設定済)。
+# ================================================================
 
 on:
-  pull_request:
-    branches:
-      - main
-      - develop
+  issue_comment:
+    types: [created]
 
 permissions:
   contents: read
+  # issue_comment イベントから PR HEAD を checkout するため必要。
+  pull-requests: read
+  # 各 job 完了時に PR HEAD commit へ check run を投影するために必要
+  # (issue_comment event の標準 check run は default branch HEAD に紐づいて
+  # PR HEAD には反映されないため、自前で check run を作成して Branch
+  # protection の Required check を満たす。冒頭「Branch protection の
+  # Required status checks との連携」コメント参照)。
+  checks: write
 
-# 同じ ref に新しい push が来たら in-progress run をキャンセルする。PR への
-# 連続 push で CI 時間が累積するのを防ぐ。
+# 同じ PR への連続 `!run ci` コメントで in-progress run を cancel する。
+# `issue_comment` event の `github.ref` は default branch を指してしまい
+# PR 間で衝突するため、group key は PR 番号ベースで構築する。
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-pr-${{ github.event.issue.number }}
   cancel-in-progress: true
 
 env:
@@ -62,22 +116,91 @@ env:
   RUSTFLAGS: -D warnings
 
 jobs:
+  # ================================================================
+  # gate: comment trigger の許可判定 + PR ref / matrix モードの解決
+  # ================================================================
+  # すべての CI job は本 gate に `needs:` 依存する。gate が skip されると
+  # 後続 job も skip される (`needs` の標準挙動)。これにより:
+  #
+  # - comment trigger のフィルタを 1 箇所に集約 (typo / 抜けを防ぐ)
+  # - 将来 trigger を `pull_request:` に戻すときの差し替えが gate のみで済む
+  # - 各 job の `if:` 条件は gate の output だけを参照するシンプルな形に保てる
+  #
+  # 許可条件:
+  # - issue (= PR コメントを含む) ではなく PR コメントであること
+  #   (`github.event.issue.pull_request` が truthy なら PR)
+  # - body に `!run ci` が含まれること (matrix 指定もこのサブ文字列を含む)
+  # - author が OWNER / MEMBER / COLLABORATOR のいずれか
+  #   (fork からの外部 attacker による trigger を遮断)
+  gate:
+    name: gate (comment filter)
+    if: >-
+      github.event.issue.pull_request &&
+      contains(github.event.comment.body, '!run ci') &&
+      (
+        github.event.comment.author_association == 'OWNER' ||
+        github.event.comment.author_association == 'MEMBER' ||
+        github.event.comment.author_association == 'COLLABORATOR'
+      )
+    runs-on: ubuntu-latest
+    outputs:
+      # PR HEAD の ref。後続 job の checkout で参照する。
+      pr_ref: ${{ steps.resolve.outputs.pr_ref }}
+      # test job の matrix.os に渡す OS リスト (JSON 配列文字列)。
+      # `!run ci` 単独 → `["ubuntu-latest"]` (Linux 1 OS)
+      # `!run ci matrix` → `["ubuntu-latest","macos-latest","windows-latest"]` (3 OS)
+      # test job 側では `matrix.os: ${{ fromJSON(needs.gate.outputs.os_matrix) }}`
+      # で展開し、job ID / job name を両 trigger で完全に統一する (`!run ci` /
+      # `!run ci matrix` の Linux 部分が同じ job として扱われる)。
+      os_matrix: ${{ steps.resolve.outputs.os_matrix }}
+    steps:
+      - id: resolve
+        # comment body と PR 番号を env 経由で受け取り、run: 内では `${{ }}`
+        # 展開を行わない (CLAUDE.md / workflow 冒頭の command injection 防止)。
+        env:
+          BODY: ${{ github.event.comment.body }}
+          PR_NUM: ${{ github.event.issue.number }}
+        run: |
+          echo "pr_ref=refs/pull/${PR_NUM}/head" >> "$GITHUB_OUTPUT"
+          if [[ "$BODY" == *"!run ci matrix"* ]]; then
+            echo 'os_matrix=["ubuntu-latest","macos-latest","windows-latest"]' >> "$GITHUB_OUTPUT"
+            echo "Matrix mode requested (ubuntu + macos + windows)."
+          else
+            echo 'os_matrix=["ubuntu-latest"]' >> "$GITHUB_OUTPUT"
+            echo "Linux-only mode (default)."
+          fi
+
   fmt:
     name: cargo fmt --check
+    needs: gate
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ needs.gate.outputs.pr_ref }}
       - name: Show versions
         run: |
           rustup show active-toolchain
           cargo fmt --version
       - run: cargo fmt --all -- --check
+      # PR HEAD への check run 投影 (冒頭「Branch protection との連携」参照)。
+      # name は job の name と一致させ、Branch protection の Required check 設定
+      # ("cargo fmt --check") と完全一致させる。
+      - name: Report check to PR HEAD
+        if: always()
+        uses: ./.github/actions/report-check
+        with:
+          name: cargo fmt --check
+          status: ${{ job.status }}
 
   clippy:
     name: cargo clippy -D warnings
+    needs: gate
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ needs.gate.outputs.pr_ref }}
       - name: Show versions
         run: |
           rustup show active-toolchain
@@ -95,9 +218,16 @@ jobs:
           restore-keys: |
             cargo-${{ runner.os }}-${{ github.job }}-
       - run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: Report check to PR HEAD
+        if: always()
+        uses: ./.github/actions/report-check
+        with:
+          name: cargo clippy -D warnings
+          status: ${{ job.status }}
 
   doc:
     name: cargo doc
+    needs: gate
     runs-on: ubuntu-latest
     env:
       # SPEC.md の Lint / Doc 方針で `cargo doc --workspace --no-deps` が
@@ -105,6 +235,8 @@ jobs:
       RUSTDOCFLAGS: -D warnings
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ needs.gate.outputs.pr_ref }}
       - name: Show versions
         run: |
           rustup show active-toolchain
@@ -122,20 +254,40 @@ jobs:
           restore-keys: |
             cargo-${{ runner.os }}-${{ github.job }}-
       - run: cargo doc --workspace --no-deps
+      - name: Report check to PR HEAD
+        if: always()
+        uses: ./.github/actions/report-check
+        with:
+          name: cargo doc
+          status: ${{ job.status }}
 
+  # ----------------------------------------------------------------
+  # test: gate.outputs.os_matrix を fromJSON で展開し、`!run ci` /
+  # `!run ci matrix` の両 trigger を **同一 job ID** で扱う
+  # ----------------------------------------------------------------
+  # 旧版 (test-linux / test-matrix の 2 job 排他起動) との違い:
+  # - job ID が両 trigger で `test` に統一されるため、GitHub Actions の UI
+  #   セクションと Branch protection の Required 設定対象が trigger 間で
+  #   完全に一致する。Linux 部分は両 trigger で **同じ job name** `cargo test
+  #   (ubuntu-latest)` として投影される (check run も同名)
+  # - `if:` による排他制御を廃止し、matrix.os の中身 (gate が返す JSON
+  #   配列) で自然に分岐させる。`!run ci` 時は 1 OS、`!run ci matrix` 時は
+  #   3 OS で展開される
+  # - propcheck-derive の手書き parser と block_on executor の multi-platform
+  #   挙動は `!run ci matrix` で 3 OS 検証する (consumer 側で windows / macOS
+  #   でも使われる前提のため、最終 merge 前に matrix で緑にしておく)
   test:
     name: cargo test (${{ matrix.os }})
-    # OS matrix で proc-macro の手書き parser (`propcheck-derive`) と
-    # in-process executor (`block_on`) の挙動を multi-platform 検証する。
-    # propcheck は consumer 側で windows / macOS でも使われる前提なので、
-    # この 3 OS で test を緑にしてから merge する。
+    needs: gate
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: ${{ fromJSON(needs.gate.outputs.os_matrix) }}
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ needs.gate.outputs.pr_ref }}
       - name: Show versions
         run: |
           rustup show active-toolchain
@@ -159,6 +311,15 @@ jobs:
         run: cargo test --workspace --all-targets
       - name: cargo test (doc)
         run: cargo test --workspace --doc
+      - name: Report check to PR HEAD
+        if: always()
+        uses: ./.github/actions/report-check
+        with:
+          # matrix 各 OS で独立 check run を作成し、Branch protection で
+          # OS 別に Required 設定可能にする。Linux (ubuntu-latest) は両
+          # trigger で同一 check name `cargo test (ubuntu-latest)` に揃う。
+          name: cargo test (${{ matrix.os }})
+          status: ${{ job.status }}
 
   msrv:
     name: MSRV (1.82) cargo test
@@ -166,9 +327,12 @@ jobs:
     # 宣言している。testrs は直接依存ゼロ (std + proc_macro のみ) であり
     # dev-dep も無いため、build/check ではなく `cargo test` まで MSRV で
     # 流して実挙動を検証する (最も厳格な MSRV 保証)。
+    needs: gate
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ needs.gate.outputs.pr_ref }}
       - name: Install Rust 1.82
         run: |
           rustup toolchain install 1.82 --profile minimal --no-self-update
@@ -191,6 +355,12 @@ jobs:
           restore-keys: |
             cargo-${{ runner.os }}-${{ github.job }}-
       - run: cargo test --workspace --all-targets
+      - name: Report check to PR HEAD
+        if: always()
+        uses: ./.github/actions/report-check
+        with:
+          name: MSRV (1.82) cargo test
+          status: ${{ job.status }}
 
   deny:
     name: cargo deny (license/bans/sources/advisories)
@@ -221,9 +391,12 @@ jobs:
     # - audit / deny の責務分離は失うが、cargo-audit の制約 (CVSS 4.0 parse
     #   不可) と library workspace 特有の lockfile resolve コストから解放される
     # ================================================================
+    needs: gate
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ needs.gate.outputs.pr_ref }}
       # 許容 3rd party action #1 / 1: EmbarkStudios/cargo-deny-action
       # (本 workflow 冒頭の "3rd party action allowlist" 参照。allowlist 外の
       # 3rd party action を新規追加する場合は、冒頭コメントの手順に従うこと)
@@ -234,3 +407,9 @@ jobs:
       - uses: EmbarkStudios/cargo-deny-action@091bd13faf7e96935df105635d17ce9a607bc99d # v2
         with:
           command: check licenses bans sources advisories
+      - name: Report check to PR HEAD
+        if: always()
+        uses: ./.github/actions/report-check
+        with:
+          name: cargo deny (license/bans/sources/advisories)
+          status: ${{ job.status }}

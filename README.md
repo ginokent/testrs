@@ -594,3 +594,11 @@ cargo run --example sort_props   -p propcheck
 cargo run --example derive_demo  -p propcheck   # 失敗するプロパティをデモ
 cargo run --release --example find_crash -p propcheck-fuzz
 ```
+
+## Contributing
+
+開発手順 ([mise](https://mise.jdx.dev/) install / `mise run ci` の使い方 /
+local-CI 対応表)、リポ局所の規約、および設計判断のトレードオフ (特に
+`ci-publish-status-dangerously` の危険性) は [`CONTRIBUTING.md`](CONTRIBUTING.md)
+を参照。
+

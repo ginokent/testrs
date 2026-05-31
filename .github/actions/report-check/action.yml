@@ -1,0 +1,63 @@
+name: Report check run to PR HEAD
+description: |
+  issue_comment trigger で起動した job の結果を PR HEAD commit の check run
+  として作成する。Branch protection の Required status checks を満たすために
+  必要 (issue_comment event の workflow が生成する標準の check run は
+  default branch HEAD に紐づき、PR HEAD には紐づかないため)。
+
+  inputs.name は Branch protection の Required check 名と完全一致する文字列を
+  渡すこと (例: "cargo fmt --check")。
+  inputs.status は workflow 側で job.status (success / failure / cancelled
+  / skipped) を expression として評価した値を渡す想定。
+
+inputs:
+  name:
+    description: "check run の表示名 (Required check 名と一致させる)"
+    required: true
+  status:
+    description: "job.status の値 (success / failure / cancelled / skipped)"
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        # GITHUB_TOKEN は automatic で渡される。permissions: checks: write が必須。
+        GH_TOKEN: ${{ github.token }}
+        REPO: ${{ github.repository }}
+        PR_NUM: ${{ github.event.issue.number }}
+        RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        # inputs は env 経由で受け取り、run: 内では template 式の展開を避けて
+        # command injection を遮断する (ci.yml 冒頭の方針と同じ)。
+        CHECK_NAME: ${{ inputs.name }}
+        JOB_STATUS: ${{ inputs.status }}
+      run: |
+        set -euo pipefail
+
+        # PR HEAD sha を取得 (issue_comment event の github.sha は default
+        # branch HEAD なので使えない。pulls API で改めて引く)。
+        PR_HEAD_SHA=$(gh api "repos/${REPO}/pulls/${PR_NUM}" --jq .head.sha)
+
+        # job.status を check run の conclusion に mapping。
+        # GitHub Checks API の conclusion は固定列挙値で、未知の値は弾かれる。
+        case "${JOB_STATUS}" in
+          success)   CONCLUSION=success ;;
+          failure)   CONCLUSION=failure ;;
+          cancelled) CONCLUSION=cancelled ;;
+          skipped)   CONCLUSION=skipped ;;
+          *)         CONCLUSION=neutral ;;
+        esac
+
+        echo "Reporting check '${CHECK_NAME}' = ${CONCLUSION} to PR ${PR_NUM} (HEAD ${PR_HEAD_SHA})"
+
+        # check run を completed 状態で 1 発作成する (status=in_progress →
+        # completed の 2 step に分けない簡素版)。details_url は run の Actions
+        # ページに向ける。
+        gh api "repos/${REPO}/check-runs" \
+          --method POST \
+          -f name="${CHECK_NAME}" \
+          -f head_sha="${PR_HEAD_SHA}" \
+          -f status=completed \
+          -f conclusion="${CONCLUSION}" \
+          -f details_url="${RUN_URL}"
