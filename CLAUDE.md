@@ -27,6 +27,24 @@
   「テストの役割分担」参照)。ただし `propcheck-core` 内のテストは PBT runner
   自体が使えない (循環依存) ため、ループ + 固定 seed の単体テストで書く
 
+## 作業ブランチの命名 (セッション開始時に必ず確認)
+
+global `~/.claude/CLAUDE.md` の Git Flow 命名規則を、セッション冒頭で
+**自発的に** 適用すること。
+
+- **セッション開始時、作業ブランチが規約外** (`claude/*` 等、Git Flow の
+  feature プレフィックスでない) **なら、最初の commit 前に `git branch -m`
+  で改名する**。新名は `feature/add-` / `feature/fix-` / `feature/update-` /
+  `feature/breaking-change-` のいずれか。対象 issue の `Branch:` 欄があれば
+  それに従う。ユーザーの指示を待たずに行ってよい
+- 改名後の **旧リモートブランチ削除は、Claude Code on the web 環境では
+  HTTP 403 で拒否されることがある**。その場合は GitHub UI からの手動削除に
+  委ね、黙ってリトライし続けないこと
+- 強制ガードとして PreToolUse hook (`scripts/guard-branch-name.sh`、
+  `.claude/settings.json` に登録) が、規約外ブランチ上での `git commit` /
+  `git push` を `exit 2` でブロックする。ブロックされたら改名してから再実行
+  すること。許可ブランチは `develop` / `main` / `feature/{add,fix,update,breaking-change}-*`
+
 ## エージェントが PR を作る前にやること
 
 1. `mise run ci` がローカルで緑になっていること (詳細手順は `CONTRIBUTING.md`

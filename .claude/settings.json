@@ -4,5 +4,20 @@
     "pr": ""
   },
   "language": "japanese",
-  "plansDirectory": "./.claude/plans"
+  "plansDirectory": "./.claude/plans",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "if": "Bash(git *)",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/scripts/guard-branch-name.sh\"",
+            "statusMessage": "Checking branch naming convention"
+          }
+        ]
+      }
+    ]
+  }
 }
