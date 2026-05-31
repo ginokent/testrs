@@ -1,9 +1,63 @@
 # Contributing
 
-`propcheck` (testrs) への貢献ガイド。一般的な開発手順 (mise install /
-`mise run ci` の使い方) は [`README.md`](README.md) の "Development"
-セクションを参照。本ドキュメントは **設計判断とトレードオフ**、特に
-ローカル CI 経路 (`ci-publish-check-dangerously`) の危険性を中心に扱う。
+`propcheck` (testrs) への貢献ガイド。**開発手順** (mise install / mise run ci の
+使い方)、**設計判断とトレードオフ** (特に `ci-publish-check-dangerously` の
+危険性)、リポ局所の規約を集約する。
+
+エージェント (Claude Code 等) 向けの行動指針は [`CLAUDE.md`](CLAUDE.md)、
+利用者向けの API と機能一覧は [`README.md`](README.md) を参照。
+
+## 開発手順 (mise + scripts)
+
+ローカル開発では [mise](https://mise.jdx.dev/) のタスクランナーで CI 相当
+の check を並列実行する運用。
+
+### Setup (初回のみ)
+
+```bash
+# mise 本体: https://mise.jdx.dev/getting-started.html に従って install
+mise install        # mise.toml の [tools] (cargo-deny 等) を一括 install
+
+# (任意) ci-publish-check-dangerously を使うなら gh CLI も:
+#   https://cli.github.com/
+#   gh auth login
+```
+
+### 日常使用
+
+```bash
+mise run ci         # 開発 loop 用: dirty check + fmt / clippy / doc / test / deny を並列実行
+
+# 個別:
+mise run fmt
+mise run clippy
+mise run doc
+mise run test
+mise run deny
+```
+
+`mise run ci` は **modified / staged の差分があれば fail** (untracked は許容)。
+commit してから回す前提。各 task は `scripts/*.sh` を呼ぶ単純な bash wrapper
+で、mise を入れていない環境では `./scripts/<name>.sh` を直接実行しても同じ
+結果を得られる。
+
+### local / CI 対応表
+
+| local             | 実コマンド                                                              | CI job          |
+|-------------------|-------------------------------------------------------------------------|-----------------|
+| `mise run fmt`    | `cargo fmt --all -- --check`                                            | `fmt`           |
+| `mise run clippy` | `cargo clippy --workspace --all-targets -- -D warnings`                 | `clippy`        |
+| `mise run doc`    | `RUSTDOCFLAGS=-D warnings cargo doc --workspace --no-deps`              | `doc`           |
+| `mise run test`   | `cargo test --workspace --all-targets` + `cargo test --workspace --doc` | `test-linux` 等 |
+| `mise run deny`   | `cargo deny check all`                                                  | `deny`          |
+| `mise run ci`     | preflight + 上記 5 つを並列実行 (check run なし)                        | (なし)          |
+| `mise run ci-publish-check-dangerously` | (⚠️ 危険) ci 相当 + 結果を **CI と同名** check run として PR HEAD に投影 ([下の専用セクション参照](#%EF%B8%8F-ci-publish-check-dangerously--コスト削減目的のユーザー責任設計)) | (なし) |
+
+CI は GitHub Actions のコスト最適化のため PR コメント (`!run ci` /
+`!run ci matrix`) で trigger する設計。multi-OS (ubuntu / macos / windows)
+を確認したいときは PR 上で `!run ci matrix` を投稿する。詳細は
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) 冒頭参照。MSRV (1.82)
+検証はローカル task からは外しており、CI 側の `msrv` job に任せる方針。
 
 ## ブランチ命名 / コミットメッセージ / issue 管理
 
@@ -14,18 +68,6 @@
 - ブランチ名に issue 番号を含めない
 - issue は JST 時刻 `YYYY-mm-dd-HH-MM` を id として `{id}-{conv-type}-{desc}.md`
   形式で作成する
-
-## CI / ローカルチェック経路
-
-CI (GitHub Actions) は **コスト最適化のため PR コメント trigger** に
-切り替えている。詳細は [`.github/workflows/ci.yml`](.github/workflows/ci.yml)
-の冒頭コメント参照。
-
-ローカルでは [mise](https://mise.jdx.dev/) のタスクランナーで:
-
-- `mise run ci`: 開発 loop 用、check run は投げない (詳細は README.md)
-- `mise run ci-publish-check-dangerously`: 結果を CI と同名 check run と
-  して PR HEAD に投影 (詳細は下の専用セクション)
 
 ## ⚠️ `ci-publish-check-dangerously` — コスト削減目的のユーザー責任設計
 
@@ -108,12 +150,12 @@ GitHub Actions を発火させずに merge を成立させることができ、C
 
 | ファイル | 役割 |
 |---|---|
-| [`README.md`](README.md) | プロジェクト概要、利用方法、API パターン集、開発手順 (`mise install` / `mise run ci`) |
+| [`README.md`](README.md) | プロジェクト概要、利用方法、API パターン集、機能一覧 |
 | [`SPEC.md`](SPEC.md) | プロジェクトの大方針設計 (依存方針 / Toolchain pin / Workspace 構成等) |
 | [`CLAUDE.md`](CLAUDE.md) | エージェント (Claude Code 等) への局所行動指針、リポ固有の落とし穴 |
-| `CONTRIBUTING.md` (本ファイル) | 設計判断のトレードオフ、特に ci-publish-check-dangerously の危険性 |
+| `CONTRIBUTING.md` (本ファイル) | 開発手順 (mise + scripts) と設計判断のトレードオフ (特に ci-publish-check-dangerously の危険性) |
 | `~/.claude/CLAUDE.md` (global) | 全リポ共通の規約 (ブランチ命名 / コミットメッセージ / テスト方針 / 言語) |
 
 ドキュメントを変更する際は、上の表の責務に従って適切なファイルに書くこと。
-本リポを他リポにばらまく際は `CLAUDE.md` / `CONTRIBUTING.md` / `README.md`
-の development セクションを共通テンプレとして転用する想定。
+本リポを他リポにばらまく際は `CLAUDE.md` / `CONTRIBUTING.md` を共通テンプレ
+として転用する想定 (README は各リポ固有の API / 利用方法に特化させる)。

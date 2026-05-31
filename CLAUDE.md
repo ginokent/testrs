@@ -4,9 +4,9 @@
 **本リポジトリ局所の行動指針**。global な指示 (`~/.claude/CLAUDE.md`) を
 上書きするものではなく補足する。
 
-開発フローの一般的な手順は [`README.md`](README.md) の "Development" セクション、
-ローカル CI 経路の設計判断・危険性は [`CONTRIBUTING.md`](CONTRIBUTING.md) を
-参照すること。
+開発フロー (mise install / `mise run ci` 等)、リポ局所の規約、設計判断
+(特に `ci-publish-check-dangerously` の危険性) は
+[`CONTRIBUTING.md`](CONTRIBUTING.md) を参照すること。
 
 ## リポ固有の前提
 
@@ -29,8 +29,8 @@
 
 ## エージェントが PR を作る前にやること
 
-1. `mise run ci` がローカルで緑になっていること (詳細手順は `README.md` の
-   "Development" セクション)
+1. `mise run ci` がローカルで緑になっていること (詳細手順は `CONTRIBUTING.md`
+   の「開発手順」セクション)
 2. 変更点と `README.md` / `SPEC.md` / 本 `CLAUDE.md` / `CONTRIBUTING.md` の
    整合性を確認
 3. 関連 issue を `issues/completed/` に移動し、同じ commit に含める
