@@ -8,6 +8,8 @@ set -euo pipefail
 
 ./scripts/preflight.sh
 
-# mise の --jobs N で並列実行。各 task は scripts/<name>.sh を呼ぶ wrapper
-# (mise.toml 参照)。失敗があれば mise が非ゼロ exit で返す。
-mise run --jobs 5 fmt clippy doc test deny
+# mise の --jobs N で並列実行。複数 task は `:::` で区切る必要がある
+# (区切らないと最初の task の引数として後続 task 名が渡される、mise の仕様)。
+# 各 task は scripts/<name>.sh を呼ぶ wrapper (mise.toml 参照)。失敗があれば
+# mise が非ゼロ exit で返す。
+mise run --jobs 5 fmt ::: clippy ::: doc ::: test ::: deny
