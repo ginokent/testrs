@@ -1,13 +1,25 @@
 # mise (https://mise.jdx.dev/) のタスクランナー / ツール管理設定。
 #
 # - `mise install` で必要な cargo extension (cargo-deny 等) を一括 install
-# - `mise run ci`  で fmt / clippy / doc / test / deny を並列実行
+# - `mise run ci`         開発 loop 用: dirty check + fmt / clippy / doc /
+#                         test / deny を並列実行 (check run は投げない)
+# - `mise run ci-publish` 正式署名用:   ci 相当 + 結果を **CI と同名** の
+#                         check run として PR HEAD に投影 (`gh` CLI 必須)
 # - 個別 task は `mise run fmt` 等で実行可能
 # - 各 task の実体は scripts/*.sh (単純な bash wrapper)
 #
 # rust 本体は rust-toolchain.toml (channel = "1.95") で pin されているため、
 # 本ファイルの [tools] では rustc / cargo は管理しない。CI 側 (GitHub
 # Actions) と整合させるための追加 cargo extension のみ列挙する。
+#
+# ⚠️ ci-publish の危険性 (CLAUDE.md 「危険性」セクション参照):
+# 本構成では ci-publish が **CI と完全同名** の check run を投影するため、
+# Branch protection の Required check を local 1 回で満たせ、CI を発火
+# させずに merge できる。GitHub Actions コスト削減が一義的目的で、ローカル
+# 環境差で本来 CI が落ちる check が local では緑になるリスクをユーザー責任
+# として受け入れる設計。第三者 contributor が居る環境では、check 名に
+# `local-ci: *` 等の prefix を付けて CI と区別するか、ci-publish を撤去
+# することを検討すること。
 
 [tools]
 # CI の deny job (cargo-deny-action) と同じツール。`mise install` で自動
@@ -35,7 +47,9 @@ description = "cargo deny check all (license / bans / sources / advisories)"
 run = "./scripts/deny.sh"
 
 [tasks.ci]
-description = "CI 相当の全 check を並列実行 (fmt / clippy / doc / test / deny)"
-# mise は depends で列挙したタスクを並列実行する。失敗が出た時点で他タスク
-# も中断され、ci 全体が非ゼロ exit で終わる。
-depends = ["fmt", "clippy", "doc", "test", "deny"]
+description = "preflight + fmt / clippy / doc / test / deny を並列実行 (開発 loop 用、check run は投げない)"
+run = "./scripts/ci.sh"
+
+[tasks.ci-publish]
+description = "preflight + push 済み確認 + ci 相当 + 結果を **CI と同名 check run** として PR HEAD に投影"
+run = "./scripts/ci-publish.sh"
