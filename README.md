@@ -594,3 +594,61 @@ cargo run --example sort_props   -p propcheck
 cargo run --example derive_demo  -p propcheck   # 失敗するプロパティをデモ
 cargo run --release --example find_crash -p propcheck-fuzz
 ```
+
+## Development
+
+ローカル開発では [mise](https://mise.jdx.dev/) のタスクランナーで CI 相当
+の check を並列実行する運用。
+
+### Setup (初回のみ)
+
+```bash
+# mise 本体: https://mise.jdx.dev/getting-started.html に従って install
+mise install        # mise.toml の [tools] (cargo-deny 等) を一括 install
+
+# (任意) ci-publish-check-dangerously を使うなら gh CLI も:
+#   https://cli.github.com/
+#   gh auth login
+```
+
+### 日常使用
+
+```bash
+mise run ci         # 開発 loop 用: dirty check + fmt / clippy / doc / test / deny を並列実行
+
+# 個別:
+mise run fmt
+mise run clippy
+mise run doc
+mise run test
+mise run deny
+```
+
+`mise run ci` は **modified / staged の差分があれば fail** (untracked は許容)。
+commit してから回す前提。各 task は `scripts/*.sh` を呼ぶ単純な bash wrapper
+で、mise を入れていない環境では `./scripts/<name>.sh` を直接実行しても同じ
+結果を得られる。
+
+### local / CI 対応表
+
+| local             | 実コマンド                                                              | CI job          |
+|-------------------|-------------------------------------------------------------------------|-----------------|
+| `mise run fmt`    | `cargo fmt --all -- --check`                                            | `fmt`           |
+| `mise run clippy` | `cargo clippy --workspace --all-targets -- -D warnings`                 | `clippy`        |
+| `mise run doc`    | `RUSTDOCFLAGS=-D warnings cargo doc --workspace --no-deps`              | `doc`           |
+| `mise run test`   | `cargo test --workspace --all-targets` + `cargo test --workspace --doc` | `test-linux` 等 |
+| `mise run deny`   | `cargo deny check all`                                                  | `deny`          |
+| `mise run ci`     | preflight + 上記 5 つを並列実行 (check run なし)                        | (なし)          |
+| `mise run ci-publish-check-dangerously` | (⚠️ 危険) ci 相当 + 結果を **CI と同名** check run として PR HEAD に投影。[CONTRIBUTING.md](CONTRIBUTING.md) を読んでから使うこと | (なし) |
+
+CI は GitHub Actions のコスト最適化のため PR コメント (`!run ci` / `!run ci
+matrix`) で trigger する設計。multi-OS (ubuntu / macos / windows) を確認
+したいときは PR 上で `!run ci matrix` を投稿する。詳細は
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) 冒頭参照。MSRV (1.82)
+検証はローカル task からは外しており、CI 側の `msrv` job に任せる方針。
+
+### Contributing
+
+設計判断のトレードオフ、特に `ci-publish-check-dangerously` の危険性に
+ついては [`CONTRIBUTING.md`](CONTRIBUTING.md) を参照。
+

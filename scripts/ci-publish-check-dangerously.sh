@@ -1,17 +1,23 @@
 #!/usr/bin/env bash
-# scripts/ci-publish.sh — push 済みの clean HEAD に対し、ci 相当の check を
-# 実行して結果を **CI と同名** の check run として PR HEAD に投影する。
+# scripts/ci-publish-check-dangerously.sh — push 済みの clean HEAD に対し、ci
+# 相当の check を実行して結果を **CI と同名** の check run として PR HEAD に
+# 投影する。
 #
-# 設計判断 (CLAUDE.md 「⚠️ ci-publish — コスト削減目的のユーザー責任設計」
-# セクションも合わせて参照):
-# - check 名は **CI と完全同名** で投げる。これにより Branch protection の
-#   Required check 設定値を local 1 回で満たせる = CI を発火させずに merge
-#   が可能になる。GitHub Actions コスト削減が一義的目的。
-# - ⚠️ 裏返しのリスク: ローカル環境差 (OS / toolchain / cache 状態 /
-#   環境変数) で CI が落ちる check が local では緑になりうる、また gh api
-#   直叩きで任意 conclusion を post 可能なので 「PR HEAD に緑」 = 「PR コード
-#   が緑」を保証しない。第三者 contributor 環境では `local-ci: *` 等の
-#   prefix 戦略に切り替えることを検討すること。
+# ⚠️ 名前に `-dangerously` を含めているのは、本 task が GitHub Actions の CI
+# signal を local が override できる構造であることを CLI レベルで明示する
+# 意図 (npm `--force` 系の命名意図と同じ)。利用前に CONTRIBUTING.md の
+# 「ci-publish-check-dangerously — コスト削減目的のユーザー責任設計」セクション
+# を必ず読むこと。
+#
+# 設計判断 (詳細は CONTRIBUTING.md 参照):
+# - check 名は **CI と完全同名** で投げる。Branch protection の Required
+#   check 設定値を local 1 回で満たせる = CI を発火させずに merge が可能に
+#   なる。GitHub Actions コスト削減が一義的目的。
+# - ⚠️ 裏返しのリスク: ローカル環境差 (OS / toolchain / cache / 環境変数)
+#   で CI が落ちる check が local では緑になりうる。また gh api 直叩きで
+#   任意 conclusion を post 可能なので 「PR HEAD に緑」 = 「PR コードが緑」を
+#   保証しない。第三者 contributor 環境では `local-ci: *` 等の prefix 戦略
+#   への切替を検討すること。
 # - 各 task は順次実行 (並列 check run 投影で gh api の order 保証が崩れる
 #   のを避ける目的)。`mise run ci` 側は並列実行で高速化する。
 # - 各 task 単独の失敗で全体を止めず、5 task すべて実行した上で集約 status
@@ -24,7 +30,7 @@ set -euo pipefail
 if ! command -v gh >/dev/null 2>&1; then
   cat >&2 <<'EOF'
 error: gh CLI is not installed.
-       ci-publish requires `gh` to post check runs to GitHub.
+       ci-publish-check-dangerously requires `gh` to post check runs to GitHub.
        Install:        https://cli.github.com/
        Authenticate:   gh auth login
 EOF
@@ -37,7 +43,7 @@ HEAD_SHA=$(git rev-parse HEAD)
 if [[ -z "$(git branch --remotes --contains "${HEAD_SHA}" 2>/dev/null)" ]]; then
   cat >&2 <<EOF
 error: HEAD (${HEAD_SHA}) is not present on any remote.
-       Push the branch before running 'mise run ci-publish'.
+       Push the branch before running 'mise run ci-publish-check-dangerously'.
        (GitHub check runs are attached to commits known to the server;
        unpushed commits will trigger a 404 from the check-runs API.)
 EOF

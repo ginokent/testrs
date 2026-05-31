@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # scripts/report-check-local.sh — ローカル task の結果を `gh api` で check run
-# として PR HEAD (= 現在の git HEAD) に投影する。ci-publish から呼ばれる。
+# として PR HEAD (= 現在の git HEAD) に投影する。
+# ci-publish-check-dangerously から呼ばれる。
 #
 # 引数:
 #   $1 = check 表示名 (CI と同名 = Branch protection の Required 値と一致)
@@ -9,9 +10,9 @@
 # 前提:
 #   - gh CLI が install + 認証済み (`gh auth login`)
 #   - 現在の HEAD commit が remote に push 済み (= GitHub 側で参照可能)
-#   ci-publish.sh の事前 check でこれらの前提は確認済み。
+#   ci-publish-check-dangerously.sh の事前 check でこれらの前提は確認済み。
 #
-# ⚠️ 危険性 (CLAUDE.md / mise.toml の対応セクション参照):
+# ⚠️ 危険性 (CONTRIBUTING.md 参照):
 # 本 script は **CI と同名の check 名** を投影するため、Branch protection
 # の Required check を local 1 回で満たせる = CI を発火させずに merge 可能。
 # GitHub Actions コスト削減目的のユーザー責任設計。ローカル環境差で本来 CI
