@@ -23,11 +23,33 @@ CHECK_NAME="$1"
 CONCLUSION="$2"
 
 HEAD_SHA=$(git rev-parse HEAD)
-REPO=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
+
+# `REPO` の解決順位:
+# 1. `GH_REPO` env (明示指定、最優先)
+# 2. `gh repo view` (gh が GitHub.com を remote として認識できる通常環境)
+# 3. git remote URL の末尾 `owner/repo` 部分から抽出 (Claude Code on the web 等
+#    のように remote URL が内部プロキシ (`http://127.0.0.1:NNNN/git/owner/repo`)
+#    を指していて gh が GitHub host を認識できない場合の fallback)
+REPO="${GH_REPO:-}"
+if [[ -z "${REPO}" ]]; then
+  REPO=$(gh repo view --json nameWithOwner --jq .nameWithOwner 2>/dev/null || true)
+fi
+if [[ -z "${REPO}" ]]; then
+  REMOTE_URL=$(git remote get-url origin 2>/dev/null || true)
+  # 末尾 `owner/repo[.git]` を抽出。`.git` は任意。
+  if [[ "${REMOTE_URL}" =~ /([^/]+)/([^/]+)(\.git)?$ ]]; then
+    REPO="${BASH_REMATCH[1]}/${BASH_REMATCH[2]%.git}"
+  fi
+fi
+if [[ -z "${REPO}" ]]; then
+  echo "error: could not determine GitHub repository (owner/name)." >&2
+  echo "       Set the GH_REPO env (e.g. GH_REPO=owner/repo)." >&2
+  exit 1
+fi
 
 # details_url: ローカル実行は GitHub Actions run URL を持たないので、commit
-# ページ URL で代替する。将来コンソール出力を gist 等にアップロードする運用
-# にしたければここに上書き可。
+# ページ URL で代替する。github.com ドメインで固定 (REPO 解決経路に関わらず
+# 実際の commit ページは github.com/<owner>/<repo>/commit/<sha> なため)。
 DETAILS_URL="https://github.com/${REPO}/commit/${HEAD_SHA}"
 
 echo "Reporting check '${CHECK_NAME}' = ${CONCLUSION} to ${REPO} HEAD ${HEAD_SHA}"
