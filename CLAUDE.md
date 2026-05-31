@@ -5,7 +5,7 @@
 上書きするものではなく補足する。
 
 開発フロー (mise install / `mise run ci` 等)、リポ局所の規約、設計判断
-(特に `ci-publish-check-dangerously` の危険性) は
+(特に `ci-publish-status-dangerously` の危険性) は
 [`CONTRIBUTING.md`](CONTRIBUTING.md) を参照すること。
 
 ## リポ固有の前提
@@ -37,7 +37,7 @@
 4. commit message が global `~/.claude/CLAUDE.md` の規約 (動詞終止形 /
    体言止め本文) に従う
 
-## `mise run ci-publish-check-dangerously` の利用条件
+## `mise run ci-publish-status-dangerously` の利用条件
 
 本 task は CI と完全同名の check run を PR HEAD に投影することで、Branch
 protection の Required check を local 1 回で満たせる構造を持つ。**コスト
@@ -45,7 +45,7 @@ protection の Required check を local 1 回で満たせる構造を持つ。**
 local で緑になりうる。
 
 **エージェントが本 task を呼ぶ前に、必ず [`CONTRIBUTING.md`](CONTRIBUTING.md)
-の「`ci-publish-check-dangerously` — コスト削減目的のユーザー責任設計」
+の「`ci-publish-status-dangerously` — コスト削減目的のユーザー責任設計」
 セクションを読み、ユーザーが「危険性を理解して実行する」旨を明示している
 ことを確認すること**。ユーザーからの明示的指示なしに本 task を自発的に呼ば
 ないこと。

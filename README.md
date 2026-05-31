@@ -599,6 +599,6 @@ cargo run --release --example find_crash -p propcheck-fuzz
 
 開発手順 ([mise](https://mise.jdx.dev/) install / `mise run ci` の使い方 /
 local-CI 対応表)、リポ局所の規約、および設計判断のトレードオフ (特に
-`ci-publish-check-dangerously` の危険性) は [`CONTRIBUTING.md`](CONTRIBUTING.md)
+`ci-publish-status-dangerously` の危険性) は [`CONTRIBUTING.md`](CONTRIBUTING.md)
 を参照。
 
