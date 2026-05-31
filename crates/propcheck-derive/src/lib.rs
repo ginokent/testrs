@@ -25,7 +25,7 @@
 
 extern crate proc_macro;
 
-use proc_macro::{Delimiter, TokenStream, TokenTree};
+use proc_macro::{Delimiter, Group, Ident, Punct, Spacing, Span, TokenStream, TokenTree};
 
 // ---------------------------------------------------------------------------
 // #[derive(Arbitrary)]
@@ -89,6 +89,11 @@ struct FieldInfo {
     name: String,
     /// フィールドの型を、ユーザーが記述したとおりに文字列化したものです。
     ty: String,
+    /// フィールド型の元トークン列です。各トークンはユーザーが記述した位置の
+    /// span を保持しています。文字列化した `ty` を `parse()` し直すと span は
+    /// すべて call-site に潰れてしまうため、型が `Arbitrary` 未実装だった場合に
+    /// エラーを当該フィールドへ正確に指し示す目的で、この生トークンを温存します。
+    ty_tokens: TokenStream,
     /// 任意指定の `#[arbitrary(strategy = ...)]` 式です。設定されている場合、
     /// 生成される実装は `Arbitrary::arbitrary` / `Arbitrary::shrink` ではなく
     /// `Strategy::new_value` / `Strategy::shrink_value` を使用します。
@@ -468,10 +473,12 @@ fn parse_named_fields(stream: TokenStream) -> Result<Vec<FieldInfo>, String> {
             None => return Err("expected `:` after field name".to_string()),
         }
         let type_tokens = collect_until_top_comma(&mut iter);
-        let ty = stream_to_string(type_tokens.into_iter().collect());
+        let ty_tokens: TokenStream = type_tokens.into_iter().collect();
+        let ty = ty_tokens.to_string();
         out.push(FieldInfo {
             name,
             ty,
+            ty_tokens,
             strategy: attrs.strategy,
         });
     }
@@ -490,10 +497,12 @@ fn parse_tuple_fields(stream: TokenStream) -> Result<Vec<FieldInfo>, String> {
         if type_tokens.is_empty() {
             break;
         }
-        let ty = stream_to_string(type_tokens.into_iter().collect());
+        let ty_tokens: TokenStream = type_tokens.into_iter().collect();
+        let ty = ty_tokens.to_string();
         out.push(FieldInfo {
             name: String::new(),
             ty,
+            ty_tokens,
             strategy: attrs.strategy,
         });
     }
@@ -548,6 +557,96 @@ fn collect_until_top_comma(
         out.push(iter.next().unwrap());
     }
     out
+}
+
+/// フィールド型が `Arbitrary` を実装していることを検証するための補助ブロックを
+/// 生成します。
+///
+/// 生成される実装本体は型を `.parse()` 由来の call-site span でしか参照できない
+/// ため、トレイト境界が満たされない場合のエラーは `#[derive(Arbitrary)]` 行全体を
+/// 指してしまい、どのフィールドが原因か分かりません。ここでは元トークンの span を
+/// 保持したまま `__propcheck_assert_arbitrary::<FieldType>()` を呼び出すことで、
+/// エラーを当該フィールド型へ正確に指し示します。
+///
+/// `generics_decl` は struct / enum のジェネリクス宣言（角括弧なし）、
+/// `where_clause` は型パラメータへの `Arbitrary` 境界を含む完全な `where` 句
+/// （空文字列の場合あり）です。`#[arbitrary(strategy = ...)]` 付きフィールドは
+/// 型が `Arbitrary` を実装している必要がないため、呼び出し側で除外します。
+fn field_arbitrary_assertions(
+    generics_decl: &str,
+    where_clause: &str,
+    field_types: &[&TokenStream],
+) -> TokenStream {
+    if field_types.is_empty() {
+        return TokenStream::new();
+    }
+
+    // 検証関数の本体: ヘルパー定義に続けて、各フィールド型の turbofish 呼び出しを
+    // 元 span 付きで並べます。
+    let mut body: TokenStream =
+        "fn __propcheck_assert_arbitrary<__PropcheckT: ::propcheck::Arbitrary + ?Sized>() {}"
+            .parse()
+            .expect("assertion helper must parse");
+    for ty in field_types {
+        let mut call: Vec<TokenTree> = vec![
+            TokenTree::Ident(Ident::new(
+                "__propcheck_assert_arbitrary",
+                Span::call_site(),
+            )),
+            TokenTree::Punct(Punct::new(':', Spacing::Joint)),
+            TokenTree::Punct(Punct::new(':', Spacing::Alone)),
+            TokenTree::Punct(Punct::new('<', Spacing::Alone)),
+        ];
+        // 元の span を温存したまま型トークンを差し込みます。
+        call.extend((*ty).clone());
+        call.push(TokenTree::Punct(Punct::new('>', Spacing::Alone)));
+        call.push(TokenTree::Group(Group::new(
+            Delimiter::Parenthesis,
+            TokenStream::new(),
+        )));
+        call.push(TokenTree::Punct(Punct::new(';', Spacing::Alone)));
+        body.extend(call);
+    }
+
+    // 検証関数のシグネチャ。型パラメータの `Arbitrary` 境界を where 句で受けるため、
+    // フィールド型がパラメータそのものでも誤検出しません。
+    let generics = if generics_decl.is_empty() {
+        String::new()
+    } else {
+        format!("<{generics_decl}>")
+    };
+    let sig = format!("fn __propcheck_assert_fields{generics}() {where_clause}");
+    let mut fn_ts: TokenStream = sig.parse().expect("assertion signature must parse");
+    fn_ts.extend(std::iter::once(TokenTree::Group(Group::new(
+        Delimiter::Brace,
+        body,
+    ))));
+
+    // 検証関数を匿名 const に包み、生成 impl と名前衝突しないようにします。
+    let mut out: TokenStream = "const _: () =".parse().expect("const prefix must parse");
+    out.extend(std::iter::once(TokenTree::Group(Group::new(
+        Delimiter::Brace,
+        fn_ts,
+    ))));
+    out.extend(std::iter::once(TokenTree::Punct(Punct::new(
+        ';',
+        Spacing::Alone,
+    ))));
+    out
+}
+
+/// struct / enum のフィールドのうち、`#[arbitrary(strategy = ...)]` を持たない
+/// ものの型トークンを集めます。strategy 指定があるフィールドは型が `Arbitrary` を
+/// 実装している必要がないため除外します。
+fn assertable_field_types(fields: &Fields) -> Vec<&TokenStream> {
+    match fields {
+        Fields::Unit => Vec::new(),
+        Fields::Named(fs) | Fields::Unnamed(fs) => fs
+            .iter()
+            .filter(|fi| fi.strategy.is_none())
+            .map(|fi| &fi.ty_tokens)
+            .collect(),
+    }
 }
 
 fn generate_arbitrary_impl(s: &ParsedStruct) -> TokenStream {
@@ -679,11 +778,17 @@ fn generate_arbitrary_impl(s: &ParsedStruct) -> TokenStream {
         shrink_body = shrink_body,
     );
 
-    code.parse().unwrap_or_else(|e| {
+    let mut out = code.parse().unwrap_or_else(|e| {
         compile_error(&format!(
             "internal error: generated code failed to parse: {e}\n--- generated ---\n{code}"
         ))
-    })
+    });
+    // フィールド型の `Arbitrary` 境界を span 付きで検証し、未実装の場合に
+    // エラーを当該フィールドへ指し示します。
+    let field_types = assertable_field_types(&s.fields);
+    let assertions = field_arbitrary_assertions(&s.generics_decl, &where_clause, &field_types);
+    out.extend(assertions);
+    out
 }
 
 // --- enum のコード生成 ------------------------------------------------
@@ -869,11 +974,20 @@ fn generate_arbitrary_impl_enum(e: &ParsedEnum) -> TokenStream {
         }}",
     );
 
-    code.parse().unwrap_or_else(|err| {
+    let mut out = code.parse().unwrap_or_else(|err| {
         compile_error(&format!(
             "internal error: generated enum code failed to parse: {err}\n--- generated ---\n{code}"
         ))
-    })
+    });
+    // 全 variant のフィールド型について `Arbitrary` 境界を span 付きで検証します。
+    let field_types: Vec<&TokenStream> = e
+        .variants
+        .iter()
+        .flat_map(|v| assertable_field_types(&v.fields))
+        .collect();
+    let assertions = field_arbitrary_assertions(&e.generics_decl, &where_clause, &field_types);
+    out.extend(assertions);
+    out
 }
 
 // ---------------------------------------------------------------------------

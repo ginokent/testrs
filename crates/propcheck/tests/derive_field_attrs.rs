@@ -164,3 +164,28 @@ fn vec_of_in_field_attr_works() {
         true
     });
 }
+
+// --- strategy 付きフィールドは Arbitrary 未実装型でも許容される -----------
+//
+// derive が挿入するフィールド境界アサーション（型を指す診断のために生成される）
+// は、`#[arbitrary(strategy = ...)]` 付きフィールドを除外しなければなりません。
+// strategy が値を供給するため、当該フィールド型は `Arbitrary` を実装する必要が
+// ないからです。このテストは、その除外ロジックがコンパイル時に機能していること
+// を保証します（`Celsius` は意図的に `Arbitrary` を実装していません）。
+
+#[derive(Debug, Clone, PartialEq)]
+struct Celsius(i32);
+
+#[derive(Arbitrary, Debug, Clone, PartialEq)]
+struct Reading {
+    #[arbitrary(strategy = int_range(-40i32..40).map(Celsius))]
+    temp: Celsius,
+}
+
+#[test]
+fn strategy_field_with_non_arbitrary_type_compiles() {
+    run("reading", |r: &Reading| {
+        propcheck::prop_assert!((-40..40).contains(&r.temp.0));
+        true
+    });
+}

@@ -2,7 +2,7 @@
 
 - Priority: Medium
 - Created: 2026-05-25 21:03 JST
-- Completed:
+- Completed: 2026-05-31 JST (claude/next-steps-discussion-yrtqU で実装)
 - Model: -
 - Branch: feature/add-derive-improve-compile-error-messages
 

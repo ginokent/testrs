@@ -55,7 +55,25 @@ pub use classify::Classifications;
 pub use propcheck_core::strategy;
 // `Arbitrary` を trait（propcheck-core から、型の名前空間）および
 // derive マクロ（propcheck-derive から、マクロの名前空間）の両方として公開します。
-pub use propcheck_derive::{propcheck, Arbitrary};
+pub use propcheck_derive::propcheck;
+
+/// `#[derive(Arbitrary)]` は各フィールド型が [`Arbitrary`] を実装していることを
+/// 要求します。未実装の型をフィールドに持つ場合はコンパイルエラーとなり、診断は
+/// 当該フィールドの型を指し示します（`#[arbitrary(strategy = ...)]` 付きフィールド
+/// は strategy が値を供給するため除外されます）。
+///
+/// ```compile_fail
+/// use propcheck::Arbitrary;
+///
+/// // `Arbitrary` 未実装の型。
+/// struct NotArbitrary;
+///
+/// #[derive(Arbitrary)]
+/// struct Holder {
+///     value: NotArbitrary,
+/// }
+/// ```
+pub use propcheck_derive::Arbitrary;
 #[doc(hidden)]
 pub use strategy_runner::__ComposedStrategy;
 pub use strategy_runner::{forall_strategy, forall_strategy_with, run_strategy, run_strategy_with};
