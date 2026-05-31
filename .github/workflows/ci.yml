@@ -146,9 +146,13 @@ jobs:
     outputs:
       # PR HEAD の ref。後続 job の checkout で参照する。
       pr_ref: ${{ steps.resolve.outputs.pr_ref }}
-      # `!run ci matrix` が指定されているなら 'true'、それ以外は 'false'。
-      # test-linux / test-matrix の if: でこの値を判定する。
-      run_matrix: ${{ steps.resolve.outputs.run_matrix }}
+      # test job の matrix.os に渡す OS リスト (JSON 配列文字列)。
+      # `!run ci` 単独 → `["ubuntu-latest"]` (Linux 1 OS)
+      # `!run ci matrix` → `["ubuntu-latest","macos-latest","windows-latest"]` (3 OS)
+      # test job 側では `matrix.os: ${{ fromJSON(needs.gate.outputs.os_matrix) }}`
+      # で展開し、job ID / job name を両 trigger で完全に統一する (`!run ci` /
+      # `!run ci matrix` の Linux 部分が同じ job として扱われる)。
+      os_matrix: ${{ steps.resolve.outputs.os_matrix }}
     steps:
       - id: resolve
         # comment body と PR 番号を env 経由で受け取り、run: 内では `${{ }}`
@@ -159,10 +163,10 @@ jobs:
         run: |
           echo "pr_ref=refs/pull/${PR_NUM}/head" >> "$GITHUB_OUTPUT"
           if [[ "$BODY" == *"!run ci matrix"* ]]; then
-            echo "run_matrix=true" >> "$GITHUB_OUTPUT"
+            echo 'os_matrix=["ubuntu-latest","macos-latest","windows-latest"]' >> "$GITHUB_OUTPUT"
             echo "Matrix mode requested (ubuntu + macos + windows)."
           else
-            echo "run_matrix=false" >> "$GITHUB_OUTPUT"
+            echo 'os_matrix=["ubuntu-latest"]' >> "$GITHUB_OUTPUT"
             echo "Linux-only mode (default)."
           fi
 
@@ -258,61 +262,27 @@ jobs:
           status: ${{ job.status }}
 
   # ----------------------------------------------------------------
-  # test-linux: `!run ci` (matrix 指定なし) のとき ubuntu-latest のみで実行
+  # test: gate.outputs.os_matrix を fromJSON で展開し、`!run ci` /
+  # `!run ci matrix` の両 trigger を **同一 job ID** で扱う
   # ----------------------------------------------------------------
-  test-linux:
-    name: cargo test (ubuntu-latest)
-    needs: gate
-    if: needs.gate.outputs.run_matrix == 'false'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-        with:
-          ref: ${{ needs.gate.outputs.pr_ref }}
-      - name: Show versions
-        run: |
-          rustup show active-toolchain
-          cargo --version
-          rustc --version
-      - name: Cache cargo registry and target
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
-        with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/
-          key: cargo-${{ runner.os }}-${{ github.job }}-${{ hashFiles('**/Cargo.lock', 'rust-toolchain.toml') }}
-          restore-keys: |
-            cargo-${{ runner.os }}-${{ github.job }}-
-      - name: cargo build
-        run: cargo build --workspace --all-targets
-      - name: cargo test
-        run: cargo test --workspace --all-targets
-      - name: cargo test (doc)
-        run: cargo test --workspace --doc
-      - name: Report check to PR HEAD
-        if: always()
-        uses: ./.github/actions/report-check
-        with:
-          name: cargo test (ubuntu-latest)
-          status: ${{ job.status }}
-
-  # ----------------------------------------------------------------
-  # test-matrix: `!run ci matrix` のときのみ ubuntu / macos / windows で実行
-  # ----------------------------------------------------------------
-  # propcheck-derive の手書き parser と block_on executor の挙動を
-  # multi-platform 検証する。consumer 側で windows / macOS でも使われる
-  # 前提のため、最終 merge 前にはこの 3 OS で test を緑にしておく。
-  test-matrix:
+  # 旧版 (test-linux / test-matrix の 2 job 排他起動) との違い:
+  # - job ID が両 trigger で `test` に統一されるため、GitHub Actions の UI
+  #   セクションと Branch protection の Required 設定対象が trigger 間で
+  #   完全に一致する。Linux 部分は両 trigger で **同じ job name** `cargo test
+  #   (ubuntu-latest)` として投影される (check run も同名)
+  # - `if:` による排他制御を廃止し、matrix.os の中身 (gate が返す JSON
+  #   配列) で自然に分岐させる。`!run ci` 時は 1 OS、`!run ci matrix` 時は
+  #   3 OS で展開される
+  # - propcheck-derive の手書き parser と block_on executor の multi-platform
+  #   挙動は `!run ci matrix` で 3 OS 検証する (consumer 側で windows / macOS
+  #   でも使われる前提のため、最終 merge 前に matrix で緑にしておく)
+  test:
     name: cargo test (${{ matrix.os }})
     needs: gate
-    if: needs.gate.outputs.run_matrix == 'true'
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: ${{ fromJSON(needs.gate.outputs.os_matrix) }}
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -346,7 +316,8 @@ jobs:
         uses: ./.github/actions/report-check
         with:
           # matrix 各 OS で独立 check run を作成し、Branch protection で
-          # OS 別に Required 設定可能にする。
+          # OS 別に Required 設定可能にする。Linux (ubuntu-latest) は両
+          # trigger で同一 check name `cargo test (ubuntu-latest)` に揃う。
           name: cargo test (${{ matrix.os }})
           status: ${{ job.status }}
 

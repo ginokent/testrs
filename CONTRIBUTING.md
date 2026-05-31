@@ -48,7 +48,7 @@ commit してから回す前提。各 task は `scripts/*.sh` を呼ぶ単純な
 | `mise run fmt`    | `cargo fmt --all -- --check`                                            | `fmt`           |
 | `mise run clippy` | `cargo clippy --workspace --all-targets -- -D warnings`                 | `clippy`        |
 | `mise run doc`    | `RUSTDOCFLAGS=-D warnings cargo doc --workspace --no-deps`              | `doc`           |
-| `mise run test`   | `cargo test --workspace --all-targets` + `cargo test --workspace --doc` | `test-linux` 等 |
+| `mise run test`   | `cargo test --workspace --all-targets` + `cargo test --workspace --doc` | `test` (matrix の各 OS) |
 | `mise run deny`   | `cargo deny check all`                                                  | `deny`          |
 | `mise run ci`     | preflight + 上記 5 つを並列実行 (check run なし)                        | (なし)          |
 | `mise run ci-publish-check-dangerously` | (⚠️ 危険) ci 相当 + 結果を **CI と同名** check run として PR HEAD に投影 ([下の専用セクション参照](#%EF%B8%8F-ci-publish-check-dangerously--コスト削減目的のユーザー責任設計)) | (なし) |
