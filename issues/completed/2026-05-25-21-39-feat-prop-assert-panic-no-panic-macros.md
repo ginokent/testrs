@@ -2,7 +2,7 @@
 
 - Priority: Low
 - Created: 2026-05-25 20:48 JST
-- Completed:
+- Completed: 2026-06-01 JST (feature/add-panic-assert-and-forall-macros で実装)
 - Model: -
 - Branch: feature/add-prop-assert-panic-no-panic-macros
 

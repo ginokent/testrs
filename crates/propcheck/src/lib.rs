@@ -49,7 +49,7 @@ pub use async_exec::block_on;
 pub use differential::{differential, differential_with};
 
 #[doc(hidden)]
-pub use assert::{__current_context, __pop_context, __push_context};
+pub use assert::{__current_context, __panic_payload_str, __pop_context, __push_context};
 pub use assert::{PropAssertFailure, PropDiscard, PropSkip};
 pub use classify::Classifications;
 pub use propcheck_core::strategy;
@@ -367,6 +367,34 @@ where
         None
     };
     run_loop(&cfg, &mut wrapped, &[])
+}
+
+/// [`forall()`] の宣言的なシンタックスシュガーです。変数 + 型バインドの構文で
+/// プロパティを書けます。複数の変数を与えると、対応するタプル型に対する
+/// [`forall()`] 呼び出しへ展開されます。
+///
+/// ```ignore
+/// // 単一変数: forall(|n: &u8| ...) へ展開。
+/// let outcome = forall! { |n: u8| {
+///     prop_assert_eq!(n.wrapping_add(0), *n);
+///     true
+/// }};
+///
+/// // 複数変数: forall(|(a, b): &(i32, i32)| ...) へ展開。
+/// let outcome = forall! { |a: i32, b: i32| {
+///     prop_assert_eq!(a.wrapping_add(*b), b.wrapping_add(*a));
+///     true
+/// }};
+/// ```
+///
+/// クロージャ引数は match ergonomics により本体内では参照 (`&T`) として束縛
+/// されます。明示的な [`Config`] が必要な場合は [`forall_with`] を直接呼んで
+/// ください。
+#[macro_export]
+macro_rules! forall {
+    (| $($name:ident : $ty:ty),+ $(,)? | $body:expr) => {
+        $crate::forall(|($($name),+): &($($ty),+)| $body)
+    };
 }
 
 /// [`Outcome::Failed`] を `panic!` に変換する便利なラッパーで、

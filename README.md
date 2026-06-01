@@ -75,6 +75,8 @@ fn stress_test(v: Vec<u32>) {
 | `#[propcheck(cases = N, seed = N, ..)]`    | 同上、`key = literal` 引数付き                      |
 | `#[propcheck] async fn ...`                | 組み込み `block_on` を使う — ランタイム不要         |
 | `prop_assert!{,_eq,_ne,_matches,_close}!`  | `propcheck::prop_assert*!`                          |
+| `prop_assert_panic!` / `prop_assert_no_panic!` | 式が panic する / しないことを表明                  |
+| `forall!`                                  | `forall` の変数バインド構文シュガー                 |
 | `prop_assume!` / `prop_skip!`              | 不適切な入力 / 不適切な環境を切り分け               |
 | `prop_with_context!`                       | 失敗メッセージ内のスコープ付きコンテキスト文字列    |
 | `classify!`                                | ケースごとのラベル分布レポート                      |
