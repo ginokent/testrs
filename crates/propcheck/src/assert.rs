@@ -75,6 +75,20 @@ pub fn __current_context() -> String {
     })
 }
 
+/// `catch_unwind` が返す panic payload から、可能なら人間可読なメッセージを
+/// 取り出します。`prop_assert_no_panic!` が失敗メッセージに panic の理由を
+/// 含めるために使います。`&str` / `String` 以外の payload は型不明として扱います。
+#[doc(hidden)]
+pub fn __panic_payload_str(payload: &(dyn std::any::Any + Send)) -> String {
+    if let Some(s) = payload.downcast_ref::<&str>() {
+        (*s).to_string()
+    } else if let Some(s) = payload.downcast_ref::<String>() {
+        s.clone()
+    } else {
+        "<non-string panic payload>".to_string()
+    }
+}
+
 /// `body` の実行中、コンテキストフレームをプッシュします。`body` 内で失敗した
 /// 任意の assertion は、報告されるメッセージにフォーマットされたコンテキスト
 /// 文字列を含めます。
@@ -266,6 +280,100 @@ macro_rules! prop_assert_matches {
             }
         }
     };
+}
+
+// --- prop_assert_panic! / prop_assert_no_panic! -----------------------
+
+/// `$expr` の評価が panic することを表明します。panic *しなかった* 場合は、
+/// ランナーが捕捉して報告する [`PropAssertFailure`] payload で panic します。
+///
+/// 内部で `std::panic::catch_unwind` を使うため、外側の `prop_assume!` /
+/// `prop_skip!` 等の制御用 payload を `$expr` 内で発行しないでください
+/// （捕捉され失われます）。これは *被テストコード* の panic を確認するための
+/// マクロです。
+///
+/// ```ignore
+/// // 0 除算が panic することを確認する。
+/// prop_assert_panic!(divide(n, 0));
+/// prop_assert_panic!(parse(s), "parsing {s:?} should panic");
+/// ```
+#[macro_export]
+macro_rules! prop_assert_panic {
+    ($expr:expr $(,)?) => {{
+        let __result = ::std::panic::catch_unwind(::std::panic::AssertUnwindSafe(|| $expr));
+        if __result.is_ok() {
+            ::std::panic::panic_any($crate::PropAssertFailure {
+                message: ::std::format!(
+                    "prop_assert_panic!({}) failed at {}:{}{}: expression did not panic",
+                    ::std::stringify!($expr),
+                    ::std::file!(),
+                    ::std::line!(),
+                    $crate::__current_context()
+                ),
+            });
+        }
+    }};
+    ($expr:expr, $($arg:tt)+) => {{
+        let __result = ::std::panic::catch_unwind(::std::panic::AssertUnwindSafe(|| $expr));
+        if __result.is_ok() {
+            ::std::panic::panic_any($crate::PropAssertFailure {
+                message: ::std::format!(
+                    "prop_assert_panic! failed at {}:{}: {}{}: expression did not panic",
+                    ::std::file!(),
+                    ::std::line!(),
+                    ::std::format_args!($($arg)+),
+                    $crate::__current_context()
+                ),
+            });
+        }
+    }};
+}
+
+/// `$expr` の評価が panic *しない* ことを表明し、その値を返します。panic した
+/// 場合は、ランナーが捕捉して報告する [`PropAssertFailure`] payload で panic
+/// します。失敗メッセージには可能なら元の panic メッセージが含まれます。
+///
+/// ```ignore
+/// // 任意入力で関数が panic しないことを確認しつつ結果を使う。
+/// let parsed = prop_assert_no_panic!(parse(&input));
+/// prop_assert!(parsed.is_valid());
+/// ```
+#[macro_export]
+macro_rules! prop_assert_no_panic {
+    ($expr:expr $(,)?) => {{
+        match ::std::panic::catch_unwind(::std::panic::AssertUnwindSafe(|| $expr)) {
+            ::std::result::Result::Ok(__v) => __v,
+            ::std::result::Result::Err(__payload) => {
+                ::std::panic::panic_any($crate::PropAssertFailure {
+                    message: ::std::format!(
+                        "prop_assert_no_panic!({}) failed at {}:{}{}: expression panicked: {}",
+                        ::std::stringify!($expr),
+                        ::std::file!(),
+                        ::std::line!(),
+                        $crate::__current_context(),
+                        $crate::__panic_payload_str(__payload.as_ref())
+                    ),
+                });
+            }
+        }
+    }};
+    ($expr:expr, $($arg:tt)+) => {{
+        match ::std::panic::catch_unwind(::std::panic::AssertUnwindSafe(|| $expr)) {
+            ::std::result::Result::Ok(__v) => __v,
+            ::std::result::Result::Err(__payload) => {
+                ::std::panic::panic_any($crate::PropAssertFailure {
+                    message: ::std::format!(
+                        "prop_assert_no_panic! failed at {}:{}: {}{}: expression panicked: {}",
+                        ::std::file!(),
+                        ::std::line!(),
+                        ::std::format_args!($($arg)+),
+                        $crate::__current_context(),
+                        $crate::__panic_payload_str(__payload.as_ref())
+                    ),
+                });
+            }
+        }
+    }};
 }
 
 // --- prop_assume! / prop_skip! ----------------------------------------
