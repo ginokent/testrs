@@ -30,8 +30,10 @@
 
 - `rust-toolchain.toml` で **stable 1.95** に pin する (rustfmt / clippy 同梱)。
 - ローカルと CI の fmt / clippy / test / doc ジョブはすべてこの版で動かす。
-- **MSRV は 1.82** (`PanicHookInfo` のため)。MSRV ジョブのみ
-  `RUSTUP_TOOLCHAIN=1.82` で 1.82 にオーバーライドし `cargo build` を回す。
+- **MSRV は 1.82** (`PanicHookInfo` のため)。MSRV ジョブは `rustup default 1.82`
+  で 1.82 に切り替え、`cargo test --workspace --all-targets` まで回す (直接依存・
+  dev-dep ともにゼロのため build/check ではなく test で実挙動まで検証する、最も
+  厳格な MSRV 保証)。
 
 ## ワークスペース構成
 

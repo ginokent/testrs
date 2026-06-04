@@ -208,7 +208,7 @@ fn parser_does_not_panic() {
     let report = fuzz(FuzzConfig::default(), |bytes: &[u8]| {
         let _ = my_parser::parse(bytes);
     });
-    assert!(report.failure.is_none(), "found crash: {:?}", report.failure);
+    assert!(report.failure().is_none(), "found crash: {:?}", report.failure());
 }
 ```
 
