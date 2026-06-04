@@ -114,6 +114,11 @@ fn env_seed() -> u64 {
 #[derive(Debug, Clone)]
 pub struct FuzzReport {
     /// 完了したターゲット呼び出しの回数です。
+    ///
+    /// `continue_after_crash` が `false` の場合は最初の crash で実行が
+    /// 中断されるため [`FuzzConfig::iterations`] 以下になり、`true` の
+    /// 場合は最後まで反復するため [`FuzzConfig::iterations`] と一致します。
+    /// crash 入力の最小化に費やした呼び出しは含みません。
     pub iterations: usize,
     /// 使用された PRNG の seed で、再現に適しています。
     pub seed: u64,
@@ -174,6 +179,9 @@ where
 
     let mut failures: Vec<Failure> = Vec::new();
     let mut seen_crash_messages: BTreeSet<String> = BTreeSet::new();
+    // メインループで完了したターゲット呼び出しの回数です。
+    // minimize 中の呼び出しは fuzzing の反復ではないため含めません。
+    let mut completed: usize = 0;
 
     for i in 0..cfg.iterations {
         let idx = rng.gen_range_usize(0, corpus.len());
@@ -190,7 +198,9 @@ where
             );
         }
 
-        match invoke(&mut target, &input) {
+        let outcome = invoke(&mut target, &input);
+        completed += 1;
+        match outcome {
             Ok(()) => {
                 // ヒューリスティック: 将来のスプライス用に、実行された入力の
                 // 一部を残しておきます。カバレッジフィードバックがない以上、
@@ -231,10 +241,7 @@ where
     }
 
     FuzzReport {
-        iterations: failures
-            .last()
-            .map(|f| f.iteration)
-            .unwrap_or(cfg.iterations),
+        iterations: completed,
         seed: cfg.seed,
         failures,
     }
@@ -561,6 +568,52 @@ mod tests {
         let msgs: Vec<&str> = report.failures.iter().map(|f| f.message.as_str()).collect();
         assert!(msgs.iter().any(|m| m.contains("alpha")));
         assert!(msgs.iter().any(|m| m.contains("beta")));
+    }
+
+    #[test]
+    fn iterations_equals_total_invocations_with_continue_after_crash() {
+        // continue_after_crash = true では複数の異なる crash が見つかっても
+        // ループは中断されないため、iterations は完了した全呼び出し回数
+        // (cfg.iterations) と一致する。最後の crash の iteration index では
+        // ないことを検証する。
+        let cfg = FuzzConfig {
+            iterations: 20_000,
+            max_input_len: 32,
+            seed: 7,
+            initial_corpus: vec![b"hello".to_vec()],
+            minimize_steps: 50,
+            silence_panic_hook: false,
+            continue_after_crash: true,
+            dedup_by_message: true,
+            ..FuzzConfig::default()
+        };
+        let report = fuzz(cfg, |data: &[u8]| {
+            if data.contains(&0xAA) {
+                panic!("alpha");
+            }
+            if data.contains(&0xBB) {
+                panic!("beta");
+            }
+        });
+        assert!(
+            report.failures.len() >= 2,
+            "expected multiple unique crashes"
+        );
+        assert_eq!(report.iterations, 20_000);
+    }
+
+    #[test]
+    fn iterations_equals_crash_iteration_without_continue() {
+        // continue_after_crash = false (default) では最初の crash で実行が
+        // 中断されるため、iterations はその crash までに完了した呼び出し回数
+        // (= failure.iteration) と一致する。
+        let report = fuzz(cfg(0xDEAD_BEEF, 50_000), |data: &[u8]| {
+            if data.contains(&0xCC) {
+                panic!("trigger");
+            }
+        });
+        let failure = report.failure().expect("should have found a crash");
+        assert_eq!(report.iterations, failure.iteration);
     }
 
     #[test]
