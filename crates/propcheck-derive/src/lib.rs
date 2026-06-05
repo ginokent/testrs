@@ -13,9 +13,13 @@
 //! - unit struct:                 `struct Foo;`
 //! - ジェネリック struct:         `struct Foo<T> { x: T }`
 //!   （各型パラメータに `Arbitrary` 境界が自動的に追加されます）
+//! - enum および独自の where 句を持つ struct
 //!
-//! enum や独自の where 句を持つ struct は **サポートしていません**。それらに
-//! ついては `Arbitrary` 実装を手書きしてください。
+//! lifetime パラメータを含む型は **サポートしていません**。`Arbitrary` は
+//! 所有値を生成し借用データの供給元を持たないため、検出すると原因の型名と
+//! lifetime を示す `compile_error!` を出します（`reject_lifetimes` 参照）。
+//! 借用フィールドが必要な場合は所有型（例: `&str` ではなく `String`）を使うか、
+//! `Arbitrary` 実装を手書きしてください。
 //!
 //! ### `#[propcheck]`
 //! 自由関数を `propcheck::run` で駆動される `#[test]` としてラップします。
@@ -211,7 +215,8 @@ fn parse_input(input: TokenStream) -> Result<ParsedItem, String> {
         }
         None => return Err("expected type name".to_string()),
     };
-    let (generics_decl, generics_use, type_params) = parse_generics(&mut iter)?;
+    let (generics_decl, generics_use, type_params, lifetimes) = parse_generics(&mut iter)?;
+    reject_lifetimes(&name, &lifetimes)?;
     let where_extra = parse_optional_where(&mut iter)?;
 
     if kind == "struct" {
@@ -359,13 +364,19 @@ fn skip_attrs_and_visibility(iter: &mut std::iter::Peekable<proc_macro::token_st
     }
 }
 
-/// `< ... >` が存在すればパースし、(decl_string, use_string, type_param_names) を返します。
+/// `< ... >` が存在すればパースし、
+/// (decl_string, use_string, type_param_names, lifetime_names) を返します。
+///
+/// lifetime パラメータ自体はここでは拒否せず、検出した名前 (`'a` 形式) を
+/// そのまま列として返します。非サポートとしての拒否は呼び出し側
+/// ([`parse_input`]) が型名と併せて [`reject_lifetimes`] で行います
+/// (こうすることで本関数はジェネリクスの完全なパーサとして保てます)。
 fn parse_generics(
     iter: &mut std::iter::Peekable<proc_macro::token_stream::IntoIter>,
-) -> Result<(String, String, Vec<String>), String> {
+) -> Result<(String, String, Vec<String>, Vec<String>), String> {
     let opens_with_angle = matches!(iter.peek(), Some(TokenTree::Punct(p)) if p.as_char() == '<');
     if !opens_with_angle {
-        return Ok((String::new(), String::new(), Vec::new()));
+        return Ok((String::new(), String::new(), Vec::new(), Vec::new()));
     }
     iter.next(); // '<' を消費します
 
@@ -401,9 +412,10 @@ fn parse_generics(
         }
     }
 
-    // 宣言部、使用リスト、型パラメータ名を構築します。
+    // 宣言部、使用リスト、型パラメータ名、lifetime 名を構築します。
     let mut use_list: Vec<String> = Vec::new();
     let mut type_params: Vec<String> = Vec::new();
+    let mut lifetimes: Vec<String> = Vec::new();
     for (i, param_tokens) in params.iter().enumerate() {
         if i > 0 {
             decl.push_str(", ");
@@ -424,7 +436,9 @@ fn parse_generics(
             TokenTree::Punct(p) if p.as_char() == '\'' => {
                 // ライフタイム: 次の識別子がその名前です。
                 if let Some(TokenTree::Ident(name)) = param_tokens.get(1) {
-                    use_list.push(format!("'{}", name));
+                    let lt = format!("'{}", name);
+                    use_list.push(lt.clone());
+                    lifetimes.push(lt);
                 }
             }
             TokenTree::Ident(id) if id.to_string() == "const" => {
@@ -443,7 +457,29 @@ fn parse_generics(
     }
 
     let use_string = use_list.join(", ");
-    Ok((decl, use_string, type_params))
+    Ok((decl, use_string, type_params, lifetimes))
+}
+
+/// lifetime パラメータを含む型への `#[derive(Arbitrary)]` を非サポートとして
+/// 拒否します。`Arbitrary::arbitrary(&mut Rng)` は所有値を生成し、`'a` 寿命を
+/// 帯びた借用データの供給元 (入力バッファ等) を持たないため、呼び出し側が
+/// 選ぶ任意の `'a` に対して `&'a T` を生成する手段が存在しません。
+///
+/// `lifetimes` が空なら `Ok(())`、そうでなければ原因の型名と lifetime を
+/// 明示する `Err` を返します。エラー文言はこの純粋関数に閉じているため
+/// 単体テストで検証できます (token 走査側は proc_macro 実行文脈が必要で
+/// 単体テスト不可)。
+fn reject_lifetimes(type_name: &str, lifetimes: &[String]) -> Result<(), String> {
+    if lifetimes.is_empty() {
+        return Ok(());
+    }
+    let list = lifetimes.join(", ");
+    Err(format!(
+        "#[derive(Arbitrary)] does not support lifetime parameters, \
+         but `{type_name}` declares `{list}`; `Arbitrary` produces owned values \
+         and has no source for borrowed data, so use owned types \
+         (e.g. `String` instead of `&str`) or implement `Arbitrary` by hand"
+    ))
 }
 
 fn parse_named_fields(stream: TokenStream) -> Result<Vec<FieldInfo>, String> {
@@ -1312,4 +1348,38 @@ fn compile_error(msg: &str) -> TokenStream {
     format!("::std::compile_error!(\"{escaped}\");")
         .parse()
         .unwrap()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::reject_lifetimes;
+
+    // lifetime 検出のエラーパス。proc_macro token 走査は実行文脈が必要で
+    // 単体テストできないため、文言を組み立てる純粋関数 reject_lifetimes を検証する。
+
+    #[test]
+    fn reject_lifetimes_accepts_when_none() {
+        assert!(reject_lifetimes("Foo", &[]).is_ok());
+    }
+
+    #[test]
+    fn reject_lifetimes_reports_type_and_single_lifetime() {
+        let err = reject_lifetimes("Foo", &["'a".to_string()]).unwrap_err();
+        // 型名と原因 lifetime、非サポートである旨が含まれること
+        assert!(err.contains("Foo"), "error should name the type: {err}");
+        assert!(err.contains("'a"), "error should name the lifetime: {err}");
+        assert!(
+            err.contains("lifetime parameters"),
+            "error should state lifetimes are unsupported: {err}"
+        );
+    }
+
+    #[test]
+    fn reject_lifetimes_lists_all_lifetimes() {
+        let err = reject_lifetimes("Bar", &["'a".to_string(), "'b".to_string()]).unwrap_err();
+        assert!(
+            err.contains("'a, 'b"),
+            "error should list every offending lifetime: {err}"
+        );
+    }
 }

@@ -59,3 +59,17 @@
   方針と衝突するため不可)
 - `unsafe_code = "forbid"` を維持する
 - 検証手段の選択にあたりオーバーエンジニアリングを避ける
+
+## クローズ (not-planned, 2026-06-05)
+
+`propcheck` の feature としては実施しない。
+
+- (a) `compile_fail` doctest / trybuild 相当のコンパイル失敗検証は、
+  no-deps 方針 (`trybuild` 等の dev-dep 不可) と衝突する
+- (b) パーサのコア部を proc_macro 非依存表現へリファクタする案は、
+  現状の規模に対しオーバーエンジニアリング
+- 方針整理として、trybuild 相当のコンパイル失敗検証は `propcheck` の
+  feature ではなく、将来 testrs リポジトリの別兄弟 crate として扱う
+  (CLAUDE.md「PBT は将来持ちうるカテゴリの一つにすぎない」を参照)
+- なお、純粋関数に切り出せるエラーパス (例: lifetime 非サポートの
+  `reject_lifetimes`) は個別 issue 側で単体テスト済み

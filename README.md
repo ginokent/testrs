@@ -572,6 +572,13 @@ run_with(
   サポートします。enum および独自の `where` 句を持つ struct も
   扱えますが、複雑なケースでは手書きで `Arbitrary` を実装する方が
   分かりやすい場合があります。
+- **lifetime パラメータを含む型は非対応** です。`Arbitrary::arbitrary`
+  は所有値を生成し、`'a` 寿命を帯びた借用データの供給元 (入力バッファ等)
+  を持たないため、呼び出し側が選ぶ任意の `'a` に対して `&'a T` を生成する
+  手段が存在しません。`#[derive(Arbitrary)] struct Foo<'a> { s: &'a str }`
+  のような型は、どの型・どの lifetime が原因かを示す `compile_error!` で
+  コンパイル時に拒否されます。借用フィールドが必要な場合は所有型
+  (例: `&str` ではなく `String`) を使うか、`Arbitrary` を手書きしてください。
 - フィールド型が `Arbitrary` を実装していない場合、コンパイルエラーは
   `#[derive(Arbitrary)]` 行ではなく**当該フィールドの型**を指し示します。
   どのフィールドが原因かを直接特定できます (`#[arbitrary(strategy = ...)]`
