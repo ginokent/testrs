@@ -1,5 +1,11 @@
 # propcheck
 
+> **リポジトリの位置づけ**: 本リポジトリ **testrs** は Rust 向けテストツール群の
+> ワークスペースです。`propcheck`(`-core` / `-derive` / `-fuzz`) はその中で
+> **PBT + fuzzing** を担う一群であり、PBT は testrs の一機能にすぎません。今後
+> PBT とは異質なテスト手法は、既存 crate に押し込まず **別 crate として並べて
+> 追加** します。詳細は [`SPEC.md`](SPEC.md) の「リポジトリの位置づけ」を参照。
+
 Rust 向けのプロパティベーステスト + fuzzing ライブラリ。
 **外部依存ゼロ** — std とコンパイラ提供の `proc_macro` クレートのみ。
 

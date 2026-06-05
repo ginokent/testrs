@@ -10,8 +10,16 @@
 
 ## リポ固有の前提
 
-`propcheck` (testrs) は外部依存ゼロを核とした PBT + in-process fuzzer
-ライブラリ。エージェントは以下の制約を **暗黙に破らないこと**:
+本リポジトリ **testrs** は Rust 向けテストツール群のワークスペースであり、
+**PBT は将来持ちうるカテゴリの一つにすぎない** (最上位の枠組みは `SPEC.md`
+の「リポジトリの位置づけ」を参照)。PBT とは異質なテスト手法を加えるときは、
+既存 crate の feature に押し込まず **新しい兄弟 crate として追加** すること
+— `propcheck` を「リポジトリ全体」と取り違えないこと。
+
+現在その中核を担う **propcheck ファミリー** (`propcheck-core` /
+`propcheck-derive` / `propcheck` / `propcheck-fuzz`) は、外部依存ゼロを核と
+した PBT + in-process fuzzer ライブラリ。エージェントは以下の制約を
+**暗黙に破らないこと**:
 
 - **直接依存は std と `proc_macro` のみ**。`syn` / `quote` / `proc-macro2`
   を含む proc-macro 補助 crate も使用禁止 (`SPEC.md` 依存方針)。新しい依存
