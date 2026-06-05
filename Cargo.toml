@@ -1,10 +1,10 @@
 [workspace]
 resolver = "2"
 members = [
-    "crates/propcheck-core",
-    "crates/propcheck",
-    "crates/propcheck-fuzz",
-    "crates/propcheck-derive",
+    "crates/core",
+    "crates/pbt",
+    "crates/fuzz",
+    "crates/pbt-derive",
 ]
 
 [workspace.package]

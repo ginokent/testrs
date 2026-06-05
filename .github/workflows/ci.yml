@@ -273,7 +273,7 @@ jobs:
   # - `if:` による排他制御を廃止し、matrix.os の中身 (gate が返す JSON
   #   配列) で自然に分岐させる。`!run ci` 時は 1 OS、`!run ci matrix` 時は
   #   3 OS で展開される
-  # - propcheck-derive の手書き parser と block_on executor の multi-platform
+  # - testrs-pbt-derive の手書き parser と block_on executor の multi-platform
   #   挙動は `!run ci matrix` で 3 OS 検証する (consumer 側で windows / macOS
   #   でも使われる前提のため、最終 merge 前に matrix で緑にしておく)
   test:

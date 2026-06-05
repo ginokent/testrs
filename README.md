@@ -1,10 +1,11 @@
-# propcheck
+# testrs-pbt
 
 > **リポジトリの位置づけ**: 本リポジトリ **testrs** は Rust 向けテストツール群の
-> ワークスペースです。`propcheck`(`-core` / `-derive` / `-fuzz`) はその中で
-> **PBT + fuzzing** を担う一群であり、PBT は testrs の一機能にすぎません。今後
-> PBT とは異質なテスト手法は、既存 crate に押し込まず **別 crate として並べて
-> 追加** します。詳細は [`SPEC.md`](SPEC.md) の「リポジトリの位置づけ」を参照。
+> ワークスペースです。共有基盤 `testrs-core` の上に PBT 系 (`testrs-pbt` /
+> `testrs-pbt-derive`) と fuzzing 系 (`testrs-fuzz`) が乗ります。**fuzzing は
+> PBT の一部ではなく別カテゴリ** であり、PBT は testrs の一機能にすぎません。
+> 今後 PBT とは異質なテスト手法は、既存 crate に押し込まず **別 crate として
+> 並べて追加** します。詳細は [`SPEC.md`](SPEC.md) の「リポジトリの位置づけ」を参照。
 
 Rust 向けのプロパティベーステスト + fuzzing ライブラリ。
 **外部依存ゼロ** — std とコンパイラ提供の `proc_macro` クレートのみ。
@@ -15,20 +16,20 @@ Rust 向けのプロパティベーステスト + fuzzing ライブラリ。
 
 ワークスペースは 4 クレートに分かれています:
 
-| クレート           | 目的                                                                  |
-|--------------------|-----------------------------------------------------------------------|
-| `propcheck-core`   | `Rng`, `XorShift64`, `Arbitrary` trait, `strategy::*` combinator    |
-| `propcheck-derive` | `#[derive(Arbitrary)]` と `#[propcheck]` proc-macro                   |
-| `propcheck`        | テストランナー、assertion マクロ、regression shrinking              |
-| `propcheck-fuzz`   | in-process mutation・fuzzer (`fuzz` + `fuzz_typed`)         |
+| クレート             | 目的                                                                  |
+|----------------------|-----------------------------------------------------------------------|
+| `testrs-core`        | `Rng`, `XorShift64`, `Arbitrary` trait, `strategy::*` combinator    |
+| `testrs-pbt-derive`  | `#[derive(Arbitrary)]` と `#[pbt]` proc-macro                         |
+| `testrs-pbt`         | テストランナー、assertion マクロ、regression shrinking              |
+| `testrs-fuzz`        | in-process mutation・fuzzer (`fuzz` + `fuzz_typed`)         |
 
-通常は `propcheck` だけで足ります。`propcheck-core` と
-`propcheck-derive` の内容をすべて再エクスポートしています。
+通常は `testrs-pbt` だけで足ります。`testrs-core` と
+`testrs-pbt-derive` の内容をすべて再エクスポートしています。
 
 ```toml
 [dev-dependencies]
-propcheck = { path = "crates/propcheck" }
-propcheck-fuzz = { path = "crates/propcheck-fuzz" }   # オプション、fuzzing 用
+testrs-pbt = { path = "crates/pbt" }
+testrs-fuzz = { path = "crates/fuzz" }   # オプション、fuzzing 用
 ```
 
 ## 配布方針
@@ -45,21 +46,21 @@ propcheck-fuzz = { path = "crates/propcheck-fuzz" }   # オプション、fuzzin
 
 ```toml
 [dev-dependencies]
-propcheck = { git = "https://github.com/ginokent/testrs", package = "propcheck" }
+testrs-pbt = { git = "https://github.com/ginokent/testrs", package = "testrs-pbt" }
 ```
 
 ## クイックスタート
 
 ```rust
-use propcheck::{propcheck, prop_assert_eq};
+use testrs_pbt::{pbt, prop_assert_eq};
 
-#[propcheck]
+#[pbt]
 fn addition_is_commutative(a: i32, b: i32) {
     prop_assert_eq!(a.wrapping_add(b), b.wrapping_add(a));
 }
 
 // 属性引数でデフォルトを上書き:
-#[propcheck(cases = 10_000, seed = 42, max_size = 200)]
+#[pbt(cases = 10_000, seed = 42, max_size = 200)]
 fn stress_test(v: Vec<u32>) {
     prop_assert_eq!(v.len(), v.iter().count());
 }
@@ -67,20 +68,20 @@ fn stress_test(v: Vec<u32>) {
 
 `cargo test` でプロパティをデフォルト 100 回実行します。失敗時は
 ランナーが入力を最小反例まで shrink し、assertion の両辺を表示し、
-再現用の `PROPCHECK_SEED` を出力します。同じ seed は
-`target/propcheck-regressions/<test>.txt` に追記され、次回ラン冒頭で
+再現用の `TESTRS_PBT_SEED` を出力します。同じ seed は
+`target/testrs-pbt-regressions/<test>.txt` に追記され、次回ラン冒頭で
 自動再生されます。
 
 ## 同梱機能
 
 | 機能                                       | 場所                                                |
 |--------------------------------------------|-----------------------------------------------------|
-| `#[derive(Arbitrary)]` (struct & enum)     | `propcheck::Arbitrary` (マクロ名前空間)             |
+| `#[derive(Arbitrary)]` (struct & enum)     | `testrs_pbt::Arbitrary` (マクロ名前空間)            |
 | `#[arbitrary(strategy = ...)]`             | derive のフィールド単位 strategy 上書き             |
-| `#[propcheck]` 属性                        | `propcheck::propcheck`                              |
-| `#[propcheck(cases = N, seed = N, ..)]`    | 同上、`key = literal` 引数付き                      |
-| `#[propcheck] async fn ...`                | 組み込み `block_on` を使う — ランタイム不要         |
-| `prop_assert!{,_eq,_ne,_matches,_close}!`  | `propcheck::prop_assert*!`                          |
+| `#[pbt]` 属性                              | `testrs_pbt::pbt`                                   |
+| `#[pbt(cases = N, seed = N, ..)]`          | 同上、`key = literal` 引数付き                      |
+| `#[pbt] async fn ...`                      | 組み込み `block_on` を使う — ランタイム不要         |
+| `prop_assert!{,_eq,_ne,_matches,_close}!`  | `testrs_pbt::prop_assert*!`                         |
 | `prop_assert_panic!` / `prop_assert_no_panic!` | 式が panic する / しないことを表明                  |
 | `forall!`                                  | `forall` の変数バインド構文シュガー                 |
 | `prop_assume!` / `prop_skip!`              | 不適切な入力 / 不適切な環境を切り分け               |
@@ -90,17 +91,17 @@ fn stress_test(v: Vec<u32>) {
 | `prop_oneof!` / `prop_compose!`            | Strategy combinator マクロ                         |
 | `prop_recursive!` / `prop_filter!`         | 再帰木 / フィルタ付き strategy                      |
 | `Strategy::flat_map`                       | 依存生成                                            |
-| Strategy combinator                      | `propcheck::strategy::*` (`.sample(n)` / `.no_shrink()` 含む) |
-| 文字列 generator                         | `propcheck::strategy::str::*` (ascii, hex, …)       |
-| ドメイン strategy パック                 | `propcheck::strategy::domain::*` (`email_like` / `url_like` / `uuid_like` / `ipv4_dotted` / `iso8601_date`) |
-| `char_range` / `bytes` / `f64_range`       | `propcheck::strategy::{char_range, bytes, f32_range, f64_range}` |
-| 状態機械テスト                             | `propcheck::state_machine::run_state_machine`       |
-| Differential テスト                        | `propcheck::{differential, differential_with}`      |
+| Strategy combinator                      | `testrs_pbt::strategy::*` (`.sample(n)` / `.no_shrink()` 含む) |
+| 文字列 generator                         | `testrs_pbt::strategy::str::*` (ascii, hex, …)      |
+| ドメイン strategy パック                 | `testrs_pbt::strategy::domain::*` (`email_like` / `url_like` / `uuid_like` / `ipv4_dotted` / `iso8601_date`) |
+| `char_range` / `bytes` / `f64_range`       | `testrs_pbt::strategy::{char_range, bytes, f32_range, f64_range}` |
+| 状態機械テスト                             | `testrs_pbt::state_machine::run_state_machine`      |
+| Differential テスト                        | `testrs_pbt::{differential, differential_with}`     |
 | Greedy / Exhaustive shrink                 | `Config::shrink_mode`                               |
 | Regression 自動再生                        | デフォルト ON。`Config::regression_replay` で切替   |
 | Outcome accessor                           | `.is_passed()`, `.failure_message()`, `.shrunk()`, … |
-| mutation・バイト fuzzer           | `propcheck_fuzz::fuzz`                              |
-| 型付き fuzzer (`Arbitrary` 駆動)          | `propcheck_fuzz::fuzz_typed`                        |
+| mutation・バイト fuzzer           | `testrs_fuzz::fuzz`                                 |
+| 型付き fuzzer (`Arbitrary` 駆動)          | `testrs_fuzz::fuzz_typed`                           |
 | Fuzz dictionary                            | `FuzzConfig::dictionary`                            |
 | Crash 後継続 + 重複排除                    | `FuzzConfig::{continue_after_crash, dedup_by_message}` |
 | corpus / crash 永続化                    | `FuzzConfig::{corpus_dir, crash_dir}`               |
@@ -110,7 +111,7 @@ fn stress_test(v: Vec<u32>) {
 ### 1. serializer のラウンドトリップ
 
 ```rust
-use propcheck::{propcheck, prop_assert_eq, Arbitrary};
+use testrs_pbt::{pbt, prop_assert_eq, Arbitrary};
 
 #[derive(Arbitrary, Debug, Clone, PartialEq)]
 struct Config {
@@ -122,7 +123,7 @@ struct Config {
 fn to_bytes(c: &Config) -> Vec<u8> { /* ... */ }
 fn from_bytes(b: &[u8]) -> Result<Config, Error> { /* ... */ }
 
-#[propcheck]
+#[pbt]
 fn config_round_trips(c: Config) {
     let bytes = to_bytes(&c);
     let back = from_bytes(&bytes).expect("自前の serializer はパースできるはず");
@@ -133,9 +134,9 @@ fn config_round_trips(c: Config) {
 ### 2. ソートを仕様に対してテスト
 
 ```rust
-use propcheck::{propcheck, prop_assert};
+use testrs_pbt::{pbt, prop_assert};
 
-#[propcheck]
+#[pbt]
 fn sort_is_sorted(mut v: Vec<i32>) {
     let original_len = v.len();
     v.sort();
@@ -143,22 +144,22 @@ fn sort_is_sorted(mut v: Vec<i32>) {
     prop_assert!(v.windows(2).all(|w| w[0] <= w[1]));
 }
 
-#[propcheck]
+#[pbt]
 fn sort_is_idempotent(v: Vec<i32>) {
     let mut once = v.clone();
     once.sort();
     let mut twice = once.clone();
     twice.sort();
-    propcheck::prop_assert_eq!(once, twice);
+    testrs_pbt::prop_assert_eq!(once, twice);
 }
 ```
 
 ### 3. 前提条件付きプロパティ
 
 ```rust
-use propcheck::{propcheck, prop_assume, prop_assert};
+use testrs_pbt::{pbt, prop_assume, prop_assert};
 
-#[propcheck]
+#[pbt]
 fn binary_search_finds_existing(v: Vec<u32>, idx: usize) {
     let mut sorted = v.clone();
     sorted.sort();
@@ -177,8 +178,8 @@ fn binary_search_finds_existing(v: Vec<u32>, idx: usize) {
 ### 4. `Strategy` で生成値を制約する
 
 ```rust
-use propcheck::{run_strategy, prop_assert};
-use propcheck::strategy::{int_range, vec_of, StrategyExt};
+use testrs_pbt::{run_strategy, prop_assert};
+use testrs_pbt::strategy::{int_range, vec_of, StrategyExt};
 
 #[test]
 fn percentage_stays_in_range() {
@@ -191,7 +192,7 @@ fn percentage_stays_in_range() {
 }
 ```
 
-`propcheck::strategy` で使える主な combinator:
+`testrs_pbt::strategy` で使える主な combinator:
 
 - `any::<T>()` — `T::Arbitrary` に委譲
 - `just(v)` — 定数
@@ -207,7 +208,7 @@ fn percentage_stays_in_range() {
 ### 5. バイト指向ターゲットをファズ
 
 ```rust
-use propcheck_fuzz::{fuzz, FuzzConfig};
+use testrs_fuzz::{fuzz, FuzzConfig};
 
 #[test]
 fn parser_does_not_panic() {
@@ -221,7 +222,7 @@ fn parser_does_not_panic() {
 ### 6. 型付き API をファズ
 
 ```rust
-use propcheck_fuzz::{fuzz_typed, TypedFuzzConfig};
+use testrs_fuzz::{fuzz_typed, TypedFuzzConfig};
 
 #[test]
 fn json_query_never_panics() {
@@ -239,7 +240,7 @@ decoder 無しで多様な入力を探索します。
 ### 7. `classify!` で generator の分布を診断
 
 ```rust
-use propcheck::{run, classify};
+use testrs_pbt::{run, classify};
 
 run("sort handles every input", |v: &Vec<i32>| {
     classify!(v.is_empty(), "empty");
@@ -262,7 +263,7 @@ run("sort handles every input", |v: &Vec<i32>| {
 ### 8. ファズランから全 distinct crash を回収
 
 ```rust
-use propcheck_fuzz::{fuzz, FuzzConfig};
+use testrs_fuzz::{fuzz, FuzzConfig};
 use std::path::PathBuf;
 
 let report = fuzz(
@@ -290,8 +291,8 @@ for f in &report.failures {
 ### 9. 状態機械 / モデルベーステスト
 
 ```rust
-use propcheck::state_machine::{run_state_machine, StateMachine};
-use propcheck::{Arbitrary, Config};
+use testrs_pbt::state_machine::{run_state_machine, StateMachine};
+use testrs_pbt::{Arbitrary, Config};
 
 #[derive(Arbitrary, Debug, Clone)]
 enum Op {
@@ -330,9 +331,9 @@ fn vec_matches_reference() {
 ### 10. Async プロパティテスト
 
 ```rust
-use propcheck::{propcheck, prop_assert_eq};
+use testrs_pbt::{pbt, prop_assert_eq};
 
-#[propcheck]
+#[pbt]
 async fn http_parse_round_trips(req: Request) -> Result<(), Error> {
     let bytes = req.encode().await;
     let back = Request::decode(&bytes).await?;
@@ -342,7 +343,7 @@ async fn http_parse_round_trips(req: Request) -> Result<(), Error> {
 ```
 
 属性マクロは `async fn` を検出し、本体を組み込みのシングルスレッド
-executor (`propcheck::block_on`) で駆動します。tokio や async-std
+executor (`testrs_pbt::block_on`) で駆動します。tokio や async-std
 への依存は導入されません。組み込み executor は実 I/O はサポート
 しません — tokio コードを使うなら、`tokio::runtime::Runtime::new()?.block_on(...)`
 を呼ぶ非 async なラッパを書いてください。
@@ -350,7 +351,7 @@ executor (`propcheck::block_on`) で駆動します。tokio や async-std
 ### 11. Differential テスト
 
 ```rust
-propcheck::differential(
+testrs_pbt::differential(
     "fast_sort matches slow_sort",
     |v: &Vec<i32>| slow_sort(v),
     |v: &Vec<i32>| fast_sort(v),
@@ -362,8 +363,8 @@ propcheck::differential(
 ### 12. `#[derive(Arbitrary)]` をフィールド単位で制約
 
 ```rust
-use propcheck::{Arbitrary, propcheck, prop_assert};
-use propcheck::strategy::{int_range, str, vec_of};
+use testrs_pbt::{Arbitrary, pbt, prop_assert};
+use testrs_pbt::strategy::{int_range, str, vec_of};
 
 #[derive(Arbitrary, Debug, Clone)]
 struct Request {
@@ -375,7 +376,7 @@ struct Request {
     payload: Vec<u8>,
 }
 
-#[propcheck]
+#[pbt]
 fn request_is_valid(r: Request) {
     prop_assert!(!r.user_id.is_empty());
     prop_assert!(r.port >= 1024);
@@ -386,14 +387,14 @@ fn request_is_valid(r: Request) {
 文字列リテラル形式 `"expr"` (proptest スタイル) と裸の式形式の
 両方をサポート。strategy 式は `#[derive]` を書いた場所から見えて
 いる必要があります (典型的にはファイル冒頭に
-`use propcheck::strategy::*;`)。フィールド単位の shrink も strategy
+`use testrs_pbt::strategy::*;`)。フィールド単位の shrink も strategy
 を通ります — 上の例では `port` フィールドは `1024` まで縮みますが
 それを下回ることはありません。
 
 ### 13. `flat_map` による依存生成
 
 ```rust
-use propcheck::strategy::{any, int_range, vec_of, StrategyExt};
+use testrs_pbt::strategy::{any, int_range, vec_of, StrategyExt};
 // まず長さを決め、その後にちょうどその長さの Vec を生成:
 let s = int_range(1usize..10).flat_map(|len| vec_of(any::<i32>(), len..len + 1));
 ```
@@ -401,10 +402,10 @@ let s = int_range(1usize..10).flat_map(|len| vec_of(any::<i32>(), len..len + 1))
 ### 14. `prop_recursive!` による再帰データ
 
 ```rust
-use propcheck::{prop_oneof, prop_recursive};
-use propcheck::strategy::{any, just, vec_of, StrategyExt};
+use testrs_pbt::{prop_oneof, prop_recursive};
+use testrs_pbt::strategy::{any, just, vec_of, StrategyExt};
 
-#[derive(propcheck::Arbitrary, Debug, Clone)]
+#[derive(testrs_pbt::Arbitrary, Debug, Clone)]
 enum Json { Null, Bool(bool), Num(i32), Array(Vec<Json>) }
 
 let json = prop_recursive! {
@@ -425,8 +426,8 @@ let json = prop_recursive! {
 ### 15. 浮動小数点の近似比較
 
 ```rust
-use propcheck::{propcheck, prop_assert_close, prop_assume};
-#[propcheck]
+use testrs_pbt::{pbt, prop_assert_close, prop_assume};
+#[pbt]
 fn double_angle_identity(x: f64) {
     prop_assume!(x.is_finite() && x.abs() < 1e6);
     prop_assert_close!((2.0 * x).sin(), 2.0 * x.sin() * x.cos(), epsilon = 1e-9);
@@ -436,8 +437,8 @@ fn double_angle_identity(x: f64) {
 ### 16. ドメイン strategy で parser をファズ
 
 ```rust
-use propcheck::run_strategy;
-use propcheck::strategy::domain;
+use testrs_pbt::run_strategy;
+use testrs_pbt::strategy::domain;
 
 #[test]
 fn url_parser_handles_arbitrary_urls() {
@@ -479,7 +480,7 @@ fn uuid_parser_does_not_panic() {
 ### 17. `Strategy::sample(n)` でデバッグ確認
 
 ```rust
-use propcheck::strategy::{domain, int_range, vec_of, StrategyExt};
+use testrs_pbt::strategy::{domain, int_range, vec_of, StrategyExt};
 
 // テストを書かずに strategy の生成例を覗き見る。固定 seed のため
 // 何度呼んでも同じ列が返り、Diff 検証にも使える。
@@ -499,8 +500,8 @@ assert_eq!(s.sample(3).len(), 3);
 ### 18. `Strategy::no_shrink()` で shrink を抑制
 
 ```rust
-use propcheck::run_strategy;
-use propcheck::strategy::{any, vec_of, StrategyExt};
+use testrs_pbt::run_strategy;
+use testrs_pbt::strategy::{any, vec_of, StrategyExt};
 
 // 16 byte 固定長の鍵を生成。shrink すると鍵長が崩れて別 panic に化けるため
 // no_shrink で停止し、最初の反例をそのまま観察する。
@@ -525,7 +526,7 @@ run_strategy("aes round trip", key_strategy, |k: &Vec<u8>| {
 失敗時は seed が出力されます:
 
 ```
-[propcheck] my_test FAILED at case #4 (PROPCHECK_SEED=12345, 0 discarded)
+[testrs-pbt] my_test FAILED at case #4 (TESTRS_PBT_SEED=12345, 0 discarded)
   reason:   prop_assert_eq! failed at src/lib.rs:42
             left:  42
             right: 43
@@ -536,14 +537,14 @@ run_strategy("aes round trip", key_strategy, |k: &Vec<u8>| {
 再現方法は 3 通り:
 
 1. **自動** — 失敗 seed は
-   `target/propcheck-regressions/<test>.txt` に追記され、次回ラン
+   `target/testrs-pbt-regressions/<test>.txt` に追記され、次回ラン
    冒頭で再生されます。手動操作は不要 — `cargo test` を再実行する
    だけ。
-2. **環境変数** — `PROPCHECK_SEED=12345 cargo test my_test`。
-3. **Config 上書き** — テスト関数に `#[propcheck(seed = 12345)]`、
+2. **環境変数** — `TESTRS_PBT_SEED=12345 cargo test my_test`。
+3. **Config 上書き** — テスト関数に `#[pbt(seed = 12345)]`、
    または `run_with` 用に `Config { seed: 12345, ..Config::default() }`。
 
-fuzz クレートは同じ仕組みで `PROPCHECK_FUZZ_SEED` を使います。
+fuzz クレートは同じ仕組みで `TESTRS_FUZZ_SEED` を使います。
 
 ## ラン設定の調整
 
@@ -551,7 +552,7 @@ fuzz クレートは同じ仕組みで `PROPCHECK_FUZZ_SEED` を使います。
 `run_with` を使います:
 
 ```rust
-use propcheck::{run_with, Config};
+use testrs_pbt::{run_with, Config};
 
 run_with(
     "stress test",
@@ -610,9 +611,9 @@ run_with(
 ```
 cargo test --workspace
 cargo clippy --workspace --all-targets -- -D warnings
-cargo run --example sort_props   -p propcheck
-cargo run --example derive_demo  -p propcheck   # 失敗するプロパティをデモ
-cargo run --release --example find_crash -p propcheck-fuzz
+cargo run --example sort_props   -p testrs-pbt
+cargo run --example derive_demo  -p testrs-pbt   # 失敗するプロパティをデモ
+cargo run --release --example find_crash -p testrs-fuzz
 ```
 
 ## Contributing

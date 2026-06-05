@@ -1,16 +1,16 @@
 name: Fuzz
 
 # CI 標準 (`ci.yml`) の test ジョブは毎 PR で debug build / default iteration
-# で回るが、propcheck 本体は PBT + in-process fuzzer (`propcheck-fuzz`) を
+# で回るが、testrs は PBT (`testrs-pbt`) と in-process fuzzer (`testrs-fuzz`) を
 # 提供する性質上、自身もより長時間 / release ビルドで stochastic な regression
 # を引きに行く価値が高い。本 workflow を ci.yml から分離し、release ビルドで
 # workspace 全体の test を回す形にしている。
 #
-# crash を見つけた場合、propcheck の regression replay 機能で seed が次回以降
+# crash を見つけた場合、testrs-pbt の regression replay 機能で seed が次回以降
 # の実行で自動的に再現されるが、CI runner はエフェメラルなので artifact 保全
 # は行わない。再現が必要な場合は GitHub の job log に出力される
-# `PROPCHECK_SEED` を手元で `cargo test` の env に渡して replay すること
-# (詳細は propcheck README 参照)。
+# `TESTRS_PBT_SEED` / `TESTRS_FUZZ_SEED` を手元で `cargo test` の env に渡して
+# replay すること (詳細は testrs-pbt README 参照)。
 #
 # action 使用方針は ci.yml と同一: 全 action は `action@<commit SHA> # <tag>`
 # 形式で SHA pin する (tag re-pointing 経由の supply chain 攻撃阻止)。

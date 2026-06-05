@@ -7,7 +7,7 @@
 #   形式で pin している全 action の SHA を自動 bump する。tag コメントから
 #   dependabot が解釈する。
 #
-# 上限 5 PR / week。propcheck は依存数が極小なのでノイズ閾値も低めに設定。
+# 上限 5 PR / week。testrs は依存数が極小なのでノイズ閾値も低めに設定。
 # commit prefix を `chore(deps)` に統一して changelog / triage 容易化。
 #
 # cooldown を 14 日に設定する: リリース直後の yank / regression を踏まないよう、

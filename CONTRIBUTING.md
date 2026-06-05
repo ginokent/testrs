@@ -1,6 +1,6 @@
 # Contributing
 
-`propcheck` (testrs) への貢献ガイド。**開発手順** (mise install / mise run ci の
+testrs への貢献ガイド。**開発手順** (mise install / mise run ci の
 使い方)、**設計判断とトレードオフ** (特に `ci-publish-status-dangerously` の
 危険性)、リポ局所の規約を集約する。
 
