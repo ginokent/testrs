@@ -14,11 +14,13 @@
 **PBT は将来持ちうるカテゴリの一つにすぎない** (最上位の枠組みは `SPEC.md`
 の「リポジトリの位置づけ」を参照)。PBT とは異質なテスト手法を加えるときは、
 既存 crate の feature に押し込まず **新しい兄弟 crate として追加** すること
-— `propcheck` を「リポジトリ全体」と取り違えないこと。
+— `testrs-pbt` を「リポジトリ全体」と取り違えないこと。**fuzzing は PBT の
+一部ではなく別カテゴリ** であり、`testrs-fuzz` は共有基盤 `testrs-core` のみに
+依存し PBT ランナー `testrs-pbt` には依存しない。
 
-現在その中核を担う **propcheck ファミリー** (`propcheck-core` /
-`propcheck-derive` / `propcheck` / `propcheck-fuzz`) は、外部依存ゼロを核と
-した PBT + in-process fuzzer ライブラリ。エージェントは以下の制約を
+現在の構成は、共有基盤 `testrs-core` の上に PBT 系 (`testrs-pbt` /
+`testrs-pbt-derive`) と fuzzing 系 (`testrs-fuzz`) が乗る、外部依存ゼロの
+PBT + in-process fuzzer ライブラリ群。エージェントは以下の制約を
 **暗黙に破らないこと**:
 
 - **直接依存は std と `proc_macro` のみ**。`syn` / `quote` / `proc-macro2`
@@ -26,13 +28,13 @@
   追加を提案する前に `SPEC.md` を再読すること
 - **`unsafe_code = "forbid"`** が workspace 全体で強制されている。`unsafe`
   ブロックは書かない。`std::pin::pin!` 等で代替する
-- **`propcheck-fuzz/examples/find_crash.rs` は意図的に panic する** デモ
+- **`testrs-fuzz/examples/find_crash.rs` は意図的に panic する** デモ
   example。CI / test job に混ぜないこと (現状の `cargo test --workspace
   --all-targets` は example の binary build はするが run しないので OK)
 - **issue は `issues/` 配下管理** (global `~/.claude/CLAUDE.md` 参照)。完了
   したら `issues/completed/` に移動し、同じ commit に含める
 - **PBT で記述可能なものは単体テストで書かない** (`~/.claude/CLAUDE.md` の
-  「テストの役割分担」参照)。ただし `propcheck-core` 内のテストは PBT runner
+  「テストの役割分担」参照)。ただし `testrs-core` 内のテストは PBT runner
   自体が使えない (循環依存) ため、ループ + 固定 seed の単体テストで書く
 
 ## 作業ブランチの命名 (セッション開始時に必ず確認)
