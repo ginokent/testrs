@@ -5,7 +5,9 @@ testrs への貢献ガイド。**開発手順** (mise install / mise run ci の
 危険性)、リポ局所の規約を集約する。
 
 エージェント (Claude Code 等) 向けの行動指針は [`CLAUDE.md`](CLAUDE.md)、
-利用者向けの API と機能一覧は [`README.md`](README.md) を参照。
+リポジトリ全体の俯瞰は [`README.md`](README.md)、各 crate の利用者向け
+API と機能一覧は [`crates/pbt/README.md`](crates/pbt/README.md) (PBT) /
+[`crates/fuzz/README.md`](crates/fuzz/README.md) (fuzzing) を参照。
 
 ## 開発手順 (mise + scripts)
 
@@ -189,7 +191,9 @@ fine-grained で個別に設定できる。
 
 | ファイル | 役割 |
 |---|---|
-| [`README.md`](README.md) | プロジェクト概要、利用方法、API パターン集、機能一覧 |
+| [`README.md`](README.md) | リポジトリ全体の俯瞰 (crate 構成、カテゴリ分離、設計原則、各 crate README への導線) |
+| [`crates/pbt/README.md`](crates/pbt/README.md) | PBT (`testrs-pbt`) の利用方法・API パターン集・機能一覧 |
+| [`crates/fuzz/README.md`](crates/fuzz/README.md) | fuzzing (`testrs-fuzz`) の利用方法・API パターン集・機能一覧 |
 | [`SPEC.md`](SPEC.md) | プロジェクトの大方針設計 (依存方針 / Toolchain pin / Workspace 構成等) |
 | [`CLAUDE.md`](CLAUDE.md) | エージェント (Claude Code 等) への局所行動指針、リポ固有の落とし穴 |
 | `CONTRIBUTING.md` (本ファイル) | 開発手順 (mise + scripts) と設計判断のトレードオフ (特に ci-publish-status-dangerously の危険性) |
@@ -197,4 +201,5 @@ fine-grained で個別に設定できる。
 
 ドキュメントを変更する際は、上の表の責務に従って適切なファイルに書くこと。
 本リポを他リポにばらまく際は `CLAUDE.md` / `CONTRIBUTING.md` を共通テンプレ
-として転用する想定 (README は各リポ固有の API / 利用方法に特化させる)。
+として転用する想定 (トップ README と各 crate README はリポ固有の構成 / API /
+利用方法に特化させる)。
