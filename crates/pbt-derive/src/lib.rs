@@ -620,7 +620,7 @@ fn field_arbitrary_assertions(
     // 検証関数の本体: ヘルパー定義に続けて、各フィールド型の turbofish 呼び出しを
     // 元 span 付きで並べます。
     let mut body: TokenStream =
-        "fn __testrs_pbt_assert_arbitrary<__PropcheckT: ::testrs_pbt::Arbitrary + ?Sized>() {}"
+        "fn __testrs_pbt_assert_arbitrary<__TestrsPbtT: ::testrs_pbt::Arbitrary + ?Sized>() {}"
             .parse()
             .expect("assertion helper must parse");
     for ty in field_types {
