@@ -2,7 +2,7 @@
 
 - Priority: Medium
 - Created: 2026-06-08 10:09 JST
-- Completed:
+- Completed: 2026-06-08 JST
 - Model: -
 - Branch: feature/add-bench-crate
 

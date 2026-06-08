@@ -5,6 +5,7 @@ members = [
     "crates/pbt",
     "crates/fuzz",
     "crates/pbt-derive",
+    "crates/bench",
 ]
 
 [workspace.package]

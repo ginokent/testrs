@@ -1,0 +1,17 @@
+[package]
+name = "testrs-bench"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "依存ゼロ (std のみ) のマイクロベンチマークハーネス。開発時の単発・相対測定向け。"
+
+# 直接依存は std のみ。ベンチに Rng/Arbitrary は不要なため testrs-core にも
+# 依存しない独立カテゴリとする。統計関数の PBT 検証のためだけに testrs-pbt を
+# dev-dependency として用いる (配布物には影響しない)。
+[dev-dependencies]
+testrs-pbt = { path = "../pbt", version = "0.1.0" }
+
+[lints]
+workspace = true
