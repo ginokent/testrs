@@ -2,7 +2,7 @@
 
 - Priority: Medium
 - Created: 2026-06-08 11:54 JST
-- Completed:
+- Completed: 2026-06-08 JST
 - Branch: feature/add-bench-throughput-csv-sweep
 
 ## 目的
