@@ -16,12 +16,16 @@
 既存 crate の feature に押し込まず **新しい兄弟 crate として追加** すること
 — `testrs-pbt` を「リポジトリ全体」と取り違えないこと。**fuzzing は PBT の
 一部ではなく別カテゴリ** であり、`testrs-fuzz` は共有基盤 `testrs-core` のみに
-依存し PBT ランナー `testrs-pbt` には依存しない。
+依存し PBT ランナー `testrs-pbt` には依存しない。**benchmarking もまた別
+カテゴリ** であり、`testrs-bench` は計測に Rng/Arbitrary を要しないため
+`testrs-core` にすら依存せず **std のみで完結する独立 crate** である
+(各カテゴリの crate が依存する共有基盤は最小限に留めること)。
 
 現在の構成は、共有基盤 `testrs-core` の上に PBT 系 (`testrs-pbt` /
-`testrs-pbt-derive`) と fuzzing 系 (`testrs-fuzz`) が乗る、外部依存ゼロの
-PBT + in-process fuzzer ライブラリ群。エージェントは以下の制約を
-**暗黙に破らないこと**:
+`testrs-pbt-derive`) と fuzzing 系 (`testrs-fuzz`) が乗り、さらに `testrs-core`
+にも依存しない benchmarking 系 (`testrs-bench`) が並ぶ、外部依存ゼロの
+PBT + in-process fuzzer + マイクロベンチライブラリ群。エージェントは以下の
+制約を **暗黙に破らないこと**:
 
 - **直接依存は std と `proc_macro` のみ**。`syn` / `quote` / `proc-macro2`
   を含む proc-macro 補助 crate も使用禁止 (`SPEC.md` 依存方針)。新しい依存
