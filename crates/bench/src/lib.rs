@@ -91,6 +91,12 @@ pub struct BenchResult {
     pub outliers_removed: usize,
     /// 外れ値除去後のサンプルから計算した統計です。
     pub stats: Statistics,
+    /// 1 反復あたりが処理するバイト数です (データスループット算出用のメタ)。
+    ///
+    /// 計測の挙動には一切影響しません。`None` のとき bytes/s は算出されません。
+    /// 計測の制御 (`BenchConfig`) と「結果の解釈メタ」を分離するため、この値は
+    /// 設定ではなく結果に持たせています。
+    pub bytes_per_iter: Option<u64>,
 }
 
 impl BenchResult {
@@ -101,6 +107,115 @@ impl BenchResult {
         } else {
             0.0
         }
+    }
+
+    /// この結果に「1 反復あたりの処理バイト数」を関連付けます。
+    ///
+    /// 計測値は変えず、データスループット (bytes/s) の算出と出力のみを
+    /// 有効化します。`measure` / `measure_with` の結果に後付けする用途です。
+    pub fn with_bytes_per_iter(mut self, bytes_per_iter: u64) -> Self {
+        self.bytes_per_iter = Some(bytes_per_iter);
+        self
+    }
+
+    /// 1 秒あたりの処理バイト数 (bytes/s) です。
+    ///
+    /// `bytes_per_iter` が未設定、または平均が 0 のときは `None` です。
+    pub fn throughput_bytes(&self) -> Option<f64> {
+        let bytes = self.bytes_per_iter?;
+        if self.stats.mean > 0.0 {
+            Some(bytes as f64 * 1e9 / self.stats.mean)
+        } else {
+            None
+        }
+    }
+
+    /// 結果を 1 行の JSON オブジェクトに整形します (依存ゼロの手書き)。
+    ///
+    /// 生サンプル列 (`samples_ns`) を含む完全な結果を出力します。非有限値は
+    /// JSON に表現できないため `null` になります。
+    pub fn to_json(&self) -> String {
+        let s = &self.stats;
+        let bytes_per_iter = match self.bytes_per_iter {
+            Some(b) => b.to_string(),
+            None => "null".to_string(),
+        };
+        let throughput_bytes = match self.throughput_bytes() {
+            Some(v) => fmt_json_num(v),
+            None => "null".to_string(),
+        };
+        let samples: Vec<String> = self.samples.iter().map(|x| fmt_json_num(*x)).collect();
+        format!(
+            concat!(
+                "{{\"name\":{name},\"n\":{n},\"mean_ns\":{mean},\"median_ns\":{median},",
+                "\"min_ns\":{min},\"max_ns\":{max},\"std_dev_ns\":{std},\"mad_ns\":{mad},",
+                "\"cv\":{cv},\"p25_ns\":{p25},\"p75_ns\":{p75},\"outliers_removed\":{out},",
+                "\"iters_per_sample\":{ips},\"total_iterations\":{ti},",
+                "\"bytes_per_iter\":{bpi},\"throughput_ops\":{tops},",
+                "\"throughput_bytes\":{tbytes},\"samples_ns\":[{samples}]}}"
+            ),
+            name = json_string(&self.name),
+            n = s.n,
+            mean = fmt_json_num(s.mean),
+            median = fmt_json_num(s.median),
+            min = fmt_json_num(s.min),
+            max = fmt_json_num(s.max),
+            std = fmt_json_num(s.std_dev),
+            mad = fmt_json_num(s.mad),
+            cv = fmt_json_num(s.cv),
+            p25 = fmt_json_num(s.p25),
+            p75 = fmt_json_num(s.p75),
+            out = self.outliers_removed,
+            ips = self.iters_per_sample,
+            ti = self.total_iterations,
+            bpi = bytes_per_iter,
+            tops = fmt_json_num(self.throughput()),
+            tbytes = throughput_bytes,
+            samples = samples.join(","),
+        )
+    }
+
+    /// 結果を 1 行の CSV レコードに整形します。
+    ///
+    /// 列順は [`BenchResult::csv_header`] と一致します。集計値のみで生サンプル
+    /// 列は含みません。数値は接頭辞なしの生値、`bytes_per_iter` /
+    /// `throughput_bytes` が未設定のときは空フィールドになります。
+    pub fn to_csv_record(&self) -> String {
+        let s = &self.stats;
+        let bpi = self
+            .bytes_per_iter
+            .map(|b| b.to_string())
+            .unwrap_or_default();
+        let tbytes = self
+            .throughput_bytes()
+            .map(|v| format!("{v}"))
+            .unwrap_or_default();
+        format!(
+            "{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}",
+            csv_field(&self.name),
+            s.n,
+            s.mean,
+            s.median,
+            s.min,
+            s.max,
+            s.std_dev,
+            s.mad,
+            s.cv,
+            s.p25,
+            s.p75,
+            self.outliers_removed,
+            self.iters_per_sample,
+            self.total_iterations,
+            bpi,
+            self.throughput(),
+            tbytes,
+        )
+    }
+
+    /// [`BenchResult::to_csv_record`] に対応する CSV ヘッダ行です。
+    pub fn csv_header() -> &'static str {
+        "name,n,mean_ns,median_ns,min_ns,max_ns,std_dev_ns,mad_ns,cv,p25_ns,p75_ns,\
+outliers_removed,iters_per_sample,total_iterations,bytes_per_iter,throughput_ops,throughput_bytes"
     }
 }
 
@@ -139,6 +254,31 @@ where
     F: FnMut() -> O,
 {
     let result = measure_with(name, cfg, f);
+    eprintln!("{}", format_result(&result));
+    result
+}
+
+/// 1 反復あたり `bytes_per_iter` バイトを処理するクロージャをデフォルト設定で
+/// 計測し、データスループット込みの結果を表示します。
+pub fn bench_throughput<F, O>(name: &str, bytes_per_iter: u64, f: F) -> BenchResult
+where
+    F: FnMut() -> O,
+{
+    bench_throughput_with(name, &BenchConfig::default(), bytes_per_iter, f)
+}
+
+/// `cfg` に基づき、1 反復あたり `bytes_per_iter` バイトを処理するクロージャを
+/// 計測し、データスループット込みの結果を表示します。
+pub fn bench_throughput_with<F, O>(
+    name: &str,
+    cfg: &BenchConfig,
+    bytes_per_iter: u64,
+    f: F,
+) -> BenchResult
+where
+    F: FnMut() -> O,
+{
+    let result = measure_with(name, cfg, f).with_bytes_per_iter(bytes_per_iter);
     eprintln!("{}", format_result(&result));
     result
 }
@@ -196,6 +336,7 @@ where
         total_iterations,
         outliers_removed,
         stats: statistics,
+        bytes_per_iter: None,
     }
 }
 
@@ -232,6 +373,110 @@ where
     eprintln!("{}", format_result(&comparison.b));
     eprintln!("{}", format_comparison(&comparison));
     comparison
+}
+
+/// パラメータ列の各要素についてデフォルト設定でベンチを実行し、結果を集めます。
+///
+/// 各結果のラベルは `"{name}/{param}"` になります。返り値は [`format_sweep`]
+/// で表形式に整形できます。データスループットを併記したい場合は、各結果に
+/// [`BenchResult::with_bytes_per_iter`] を map してください
+/// (sweep 自体には throughput を混ぜません)。
+pub fn sweep<P, F, O>(name: &str, params: &[P], run: F) -> Vec<BenchResult>
+where
+    P: std::fmt::Display,
+    F: FnMut(&P) -> O,
+{
+    sweep_with(name, &BenchConfig::default(), params, run)
+}
+
+/// `cfg` に基づいて [`sweep`] を行います。
+pub fn sweep_with<P, F, O>(
+    name: &str,
+    cfg: &BenchConfig,
+    params: &[P],
+    mut run: F,
+) -> Vec<BenchResult>
+where
+    P: std::fmt::Display,
+    F: FnMut(&P) -> O,
+{
+    params
+        .iter()
+        .map(|p| {
+            let label = format!("{name}/{p}");
+            measure_with(&label, cfg, || run(p))
+        })
+        .collect()
+}
+
+/// sweep の結果 (複数の [`BenchResult`]) を桁揃えした表に整形します。
+///
+/// 列は name / median / thrpt (ops/s) で、いずれかの結果が
+/// [`BenchResult::throughput_bytes`] を持つ場合は data (bytes/s) 列が加わります。
+pub fn format_sweep(results: &[BenchResult]) -> String {
+    if results.is_empty() {
+        return String::new();
+    }
+    let has_bytes = results.iter().any(|r| r.throughput_bytes().is_some());
+    // 桁揃えのため、各セルの文字列を先に作る。
+    let rows: Vec<(String, String, String, String)> = results
+        .iter()
+        .map(|r| {
+            (
+                r.name.clone(),
+                fmt_ns(r.stats.median),
+                fmt_thrpt(r.throughput()),
+                r.throughput_bytes()
+                    .map(fmt_bytes_per_sec)
+                    .unwrap_or_default(),
+            )
+        })
+        .collect();
+    // 幅は char 数で測る (µ などのマルチバイト文字を 1 幅として扱う)。
+    let wn = rows
+        .iter()
+        .map(|x| x.0.chars().count())
+        .max()
+        .unwrap_or(0)
+        .max(4);
+    let wm = rows
+        .iter()
+        .map(|x| x.1.chars().count())
+        .max()
+        .unwrap_or(0)
+        .max(6);
+    let wo = rows
+        .iter()
+        .map(|x| x.2.chars().count())
+        .max()
+        .unwrap_or(0)
+        .max(5);
+    let mut out = String::new();
+    if has_bytes {
+        let wd = rows
+            .iter()
+            .map(|x| x.3.chars().count())
+            .max()
+            .unwrap_or(0)
+            .max(4);
+        out.push_str(&format!(
+            "{:<wn$}  {:>wm$}  {:>wo$}  {:>wd$}\n",
+            "name", "median", "thrpt", "data"
+        ));
+        for (n, m, o, d) in &rows {
+            out.push_str(&format!("{n:<wn$}  {m:>wm$}  {o:>wo$}  {d:>wd$}\n"));
+        }
+    } else {
+        out.push_str(&format!(
+            "{:<wn$}  {:>wm$}  {:>wo$}\n",
+            "name", "median", "thrpt"
+        ));
+        for (n, m, o, _) in &rows {
+            out.push_str(&format!("{n:<wn$}  {m:>wm$}  {o:>wo$}\n"));
+        }
+    }
+    out.pop(); // 末尾の改行を除く
+    out
 }
 
 // --- 計測のコア ---------------------------------------------------
@@ -291,6 +536,9 @@ pub fn format_result(r: &BenchResult) -> String {
         s.cv * 100.0,
     ));
     out.push_str(&format!("  thrpt:   {}\n", fmt_thrpt(r.throughput())));
+    if let Some(bps) = r.throughput_bytes() {
+        out.push_str(&format!("  data:    {}\n", fmt_bytes_per_sec(bps)));
+    }
     out.push_str(&format!(
         "  samples: {} ({} outliers removed, {} iters/sample)",
         s.n, r.outliers_removed, r.iters_per_sample,
@@ -341,6 +589,62 @@ fn fmt_thrpt(ops: f64) -> String {
         format!("{:.2} Mops/s", ops / 1e6)
     } else {
         format!("{:.2} Gops/s", ops / 1e9)
+    }
+}
+
+/// bytes/s を 2 進接頭辞 (B/s, KiB/s, MiB/s, GiB/s) で表示します。
+fn fmt_bytes_per_sec(bps: f64) -> String {
+    const KIB: f64 = 1024.0;
+    const MIB: f64 = KIB * 1024.0;
+    const GIB: f64 = MIB * 1024.0;
+    if bps < KIB {
+        format!("{bps:.2} B/s")
+    } else if bps < MIB {
+        format!("{:.2} KiB/s", bps / KIB)
+    } else if bps < GIB {
+        format!("{:.2} MiB/s", bps / MIB)
+    } else {
+        format!("{:.2} GiB/s", bps / GIB)
+    }
+}
+
+/// f64 を JSON 数値に整形します。非有限値は JSON で表現できないため `null` です。
+fn fmt_json_num(x: f64) -> String {
+    if x.is_finite() {
+        format!("{x}")
+    } else {
+        "null".to_string()
+    }
+}
+
+/// 文字列を JSON 文字列リテラル (両端のダブルクォート込み) に整形します。
+fn json_string(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() + 2);
+    out.push('"');
+    for c in s.chars() {
+        match c {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c if (c as u32) < 0x20 => out.push_str(&format!("\\u{:04x}", c as u32)),
+            c => out.push(c),
+        }
+    }
+    out.push('"');
+    out
+}
+
+/// 文字列を RFC 4180 の CSV フィールドに整形します。
+///
+/// カンマ / ダブルクォート / 改行を含む場合のみダブルクォートで囲み、
+/// 内部の `"` を `""` に二重化します。
+fn csv_field(s: &str) -> String {
+    if s.contains([',', '"', '\n', '\r']) {
+        format!("\"{}\"", s.replace('"', "\"\""))
+    } else {
+        s.to_string()
     }
 }
 
@@ -425,5 +729,50 @@ mod tests {
         assert!(s.contains("mean:"));
         assert!(s.contains("thrpt:"));
         assert!(s.contains("samples:"));
+    }
+
+    #[test]
+    fn throughput_bytes_is_consistent_with_mean() {
+        let r = measure_with("io", &fast_cfg(), || 1u64).with_bytes_per_iter(1024);
+        let tb = r.throughput_bytes().expect("bytes_per_iter is set");
+        if r.stats.mean > 0.0 {
+            assert!((tb - 1024.0 * 1e9 / r.stats.mean).abs() < 1e-3);
+        }
+    }
+
+    #[test]
+    fn throughput_bytes_is_none_without_meta() {
+        let r = measure_with("io", &fast_cfg(), || 1u64);
+        assert!(r.bytes_per_iter.is_none());
+        assert!(r.throughput_bytes().is_none());
+    }
+
+    #[test]
+    fn bench_throughput_sets_meta_and_emits_data_line() {
+        let r = bench_throughput_with("io", &fast_cfg(), 1024, || 1u64);
+        assert_eq!(r.bytes_per_iter, Some(1024));
+        assert!(format_result(&r).contains("data:"));
+    }
+
+    #[test]
+    fn sweep_yields_one_labelled_result_per_param() {
+        let params = [1u32, 2, 4];
+        let results = sweep_with("size", &fast_cfg(), &params, |p| {
+            (0..*p as u64).sum::<u64>()
+        });
+        assert_eq!(results.len(), 3);
+        assert_eq!(results[0].name, "size/1");
+        assert_eq!(results[2].name, "size/4");
+    }
+
+    #[test]
+    fn format_sweep_has_header_and_one_line_per_result() {
+        let params = [1u32, 2];
+        let results = sweep_with("s", &fast_cfg(), &params, |p| *p as u64 + 1);
+        let table = format_sweep(&results);
+        let lines: Vec<&str> = table.lines().collect();
+        assert_eq!(lines.len(), 3); // ヘッダ + 2 行
+        assert!(lines[0].contains("name"));
+        assert!(lines[0].contains("thrpt"));
     }
 }
