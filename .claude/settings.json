@@ -3,6 +3,12 @@
     "commit": "",
     "pr": ""
   },
+  "permissions": {
+    "deny": [
+      "mcp__github__create_pull_request",
+      "mcp__github__add_issue_comment"
+    ]
+  },
   "language": "japanese",
   "plansDirectory": "./.claude/plans",
   "hooks": {
